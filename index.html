@@ -6,8 +6,8 @@
 <style>
 :root{--bg1:#050611;--bg2:#0c1330;--ink:#eaf2ff;--muted:rgba(234,242,255,.72);--glass:rgba(9,12,24,.74);--warn:#ff5a7a;--gold:#ffd86b;--ok:#7cffc5;--btnIdle:.32;--btnTouch:.14;--fade:120ms;}
 *{box-sizing:border-box}html,body{height:100%}
-body{margin:0;min-height:100vh;display:grid;place-items:center;color:var(--ink);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(circle at 12% 14%, rgba(124,255,197,.12), transparent 30%),radial-gradient(circle at 82% 22%, rgba(189,163,255,.10), transparent 28%),radial-gradient(circle at 62% 84%, rgba(255,216,107,.10), transparent 30%),linear-gradient(180deg,var(--bg1),var(--bg2) 55%,var(--bg1));padding:12px;}
-.frame{width:min(94vw,680px);padding:14px;border-radius:28px;background:var(--glass);backdrop-filter:blur(10px) saturate(1.15);border:1px solid rgba(124,255,197,.20);box-shadow:0 22px 70px rgba(0,0,0,.52),0 0 40px rgba(124,255,197,.08);position:relative;}
+body{margin:0;min-height:100vh;display:grid;place-items:center;color:var(--ink);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(circle at 12% 14%, rgba(124,255,197,.12), transparent 30%),radial-gradient(circle at 82% 22%, rgba(189,163,255,.10), transparent 28%),radial-gradient(circle at 62% 84%, rgba(255,216,107,.10), transparent 30%),linear-gradient(180deg,var(--bg1),var(--bg2) 55%,var(--bg1));padding:max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));overflow-x:hidden;}
+.frame{width:100%;max-width:375px;padding:14px;border-radius:28px;background:var(--glass);backdrop-filter:blur(10px) saturate(1.15);border:1px solid rgba(124,255,197,.20);box-shadow:0 22px 70px rgba(0,0,0,.52),0 0 40px rgba(124,255,197,.08);position:relative;}
 .topbar{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;padding:10px 12px;border-radius:18px;background:rgba(10,16,34,.30);border:1px solid rgba(124,255,197,.14);}
 .topcenter{display:flex;justify-content:center;align-items:center;}
 .topright{display:flex;justify-content:flex-end;align-items:center;}
@@ -19,10 +19,10 @@ body{margin:0;min-height:100vh;display:grid;place-items:center;color:var(--ink);
 .seg button.active{background:rgba(124,255,197,.14);opacity:1}
 .sel{display:flex;gap:8px;align-items:center;padding:8px 10px;border-radius:14px;border:1px solid rgba(124,255,197,.14);background:rgba(10,16,34,.18);color:rgba(255,255,255,.86);font-weight:800;letter-spacing:.04em}
 .sel.bad{border-color:rgba(255,90,122,.55);background:rgba(255,90,122,.08)}.sel.good{border-color:rgba(124,255,197,.45);background:rgba(124,255,197,.08)}
-select{background:transparent;color:rgba(255,255,255,.92);border:0;outline:none;font-weight:900;letter-spacing:.06em;cursor:pointer;padding:2px 4px}
+select{max-width:100%;background:transparent;color:rgba(255,255,255,.92);border:0;outline:none;font-weight:900;letter-spacing:.06em;cursor:pointer;padding:2px 4px}
 .card{margin-top:12px;border-radius:18px;background:rgba(10,16,34,.28);border:1px solid rgba(124,255,197,.12);box-shadow:0 10px 26px rgba(0,0,0,.25);padding:12px}
 .prompt{display:grid;gap:8px}.prompt .meta{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
-.chip{font-size:11px;letter-spacing:.06em;padding:6px 10px;border-radius:999px;border:1px solid rgba(189,163,255,.20);background:rgba(189,163,255,.10);color:rgba(234,242,255,.86)}
+.chip{font-size:11px;letter-spacing:.06em;padding:6px 10px;border-radius:999px;border:1px solid rgba(189,163,255,.20);background:rgba(189,163,255,.10);color:rgba(234,242,255,.86)display:inline-flex;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .chip.gold{border-color:rgba(255,216,107,.20);background:rgba(255,216,107,.08)}.chip.warn{border-color:rgba(255,90,122,.22);background:rgba(255,90,122,.08)}
 .jp{font-size:15px;font-weight:800;letter-spacing:.02em;line-height:1.35}.scene{font-size:13px;color:rgba(234,242,255,.78);letter-spacing:.02em;line-height:1.35}
 .slots{min-height:78px;border-radius:18px;padding:10px;border:1px dashed rgba(255,255,255,.18);background:rgba(10,16,34,.20);display:flex;flex-wrap:wrap;gap:8px;align-items:center}
@@ -37,6 +37,18 @@ select{background:transparent;color:rgba(255,255,255,.92);border:0;outline:none;
 .explain{margin-top:10px;border-radius:18px;padding:12px;border:1px solid rgba(255,216,107,.18);background:rgba(255,216,107,.06);display:none;gap:10px}
 .explain.show{display:grid}.explain h3{margin:0;font-size:13px;letter-spacing:.06em}.explain .p{color:rgba(234,242,255,.86);font-size:12.5px;line-height:1.55}.explain .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:rgba(234,242,255,.82)}
 .diag{position:absolute;right:10px;top:10px;max-width:72ch;padding:9px 10px;border-radius:14px;background:rgba(0,0,0,.62);border:1px solid rgba(255,90,122,.45);color:rgba(255,255,255,.92);font:12px ui-monospace,SFMono-Regular,Menlo,monospace;display:none;pointer-events:none;white-space:pre-wrap;z-index:50}
+
+
+@media (max-width: 420px){
+  .frame{padding:12px;border-radius:22px;}
+  .topbar{grid-template-columns:1fr auto;gap:8px;}
+  .topspacer{display:none;}
+  .seg button{padding:9px 10px;}
+  .jp{font-size:14px;}
+  .scene{font-size:12px;}
+  .tok{padding:9px 10px;border-radius:14px;}
+  .btn{min-width:96px;padding:11px 12px;border-radius:16px;}
+}
 </style>
 </head><body>
 <div class="frame">
