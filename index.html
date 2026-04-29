@@ -8,7 +8,7 @@
 *{box-sizing:border-box}html,body{height:100%}
 body{margin:0;min-height:100vh;display:grid;place-items:center;color:var(--ink);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(circle at 12% 14%, rgba(124,255,197,.12), transparent 30%),radial-gradient(circle at 82% 22%, rgba(189,163,255,.10), transparent 28%),radial-gradient(circle at 62% 84%, rgba(255,216,107,.10), transparent 30%),linear-gradient(180deg,var(--bg1),var(--bg2) 55%,var(--bg1));padding:max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));overflow-x:hidden;}
 .frame{width:100%;max-width:375px;padding:14px;border-radius:28px;background:var(--glass);backdrop-filter:blur(10px) saturate(1.15);border:1px solid rgba(124,255,197,.20);box-shadow:0 22px 70px rgba(0,0,0,.52),0 0 40px rgba(124,255,197,.08);position:relative;}
-.topbar{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;padding:10px 12px;border-radius:18px;background:rgba(10,16,34,.30);border:1px solid rgba(124,255,197,.14);}
+.topbar{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px 12px;border-radius:18px;background:rgba(10,16,34,.30);border:1px solid rgba(124,255,197,.14);}
 .topcenter{display:flex;justify-content:center;align-items:center;}
 .topright{display:flex;justify-content:flex-end;align-items:center;}
 .topspacer{min-height:1px;}
@@ -55,13 +55,7 @@ select{max-width:100%;background:transparent;color:rgba(255,255,255,.92);border:
   <div class="diag" id="diag"></div>
   <div class="topbar">
   <div class="topspacer" aria-hidden="true"></div>
-  <div class="topcenter">
-    <div class="seg" role="tablist" aria-label="mode">
-        <button id="modeA" class="active" type="button">A (EIKEN)</button>
-        <button id="modeB" type="button">B (DAILY)</button>
-      </div>
-  </div>
-  <div class="topright">
+<div class="topright">
     <div class="sel" id="gradeWrap"><span>GRADE</span>
         <select id="gradeSel"><option value="3">3</option><option value="pre2">Pre-2</option><option value="2">2</option></select>
       </div>
@@ -238,7 +232,7 @@ function buildStrongPatternGuide(userP, correctP, userRaw){
   html+='<div style="margin-top:10px"><b>救済ルール</b>：授与系は人→物（4）と物→to/for+人（3）を相互に正解扱い。</div>';
   return html;
 }
-var els={modeA:$('modeA'),modeB:$('modeB'),gradeSel:$('gradeSel'),patternSel:$('patternSel'),patternWrap:$('patternWrap'),chipMode:$('chipMode'),chipGrade:$('chipGrade'),chipFocus:$('chipFocus'),qIndex:$('qIndex'),qTotal:$('qTotal'),jpPrompt:$('jpPrompt'),scenePrompt:$('scenePrompt'),slots:$('slots'),bank:$('bank'),btnCheck:$('btnCheck'),btnHint:$('btnHint'),btnClear:$('btnClear'),btnNext:$('btnNext'),statusMsg:$('statusMsg'),statusSub:$('statusSub'),scoreEl:$('score'),explain:$('explain'),expTitle:$('expTitle'),expDiff:$('expDiff'),expBody:$('expBody')};
+var els={gradeSel:$('gradeSel'),patternSel:$('patternSel'),patternWrap:$('patternWrap'),chipMode:$('chipMode'),chipGrade:$('chipGrade'),chipFocus:$('chipFocus'),qIndex:$('qIndex'),qTotal:$('qTotal'),jpPrompt:$('jpPrompt'),scenePrompt:$('scenePrompt'),slots:$('slots'),bank:$('bank'),btnCheck:$('btnCheck'),btnHint:$('btnHint'),btnClear:$('btnClear'),btnNext:$('btnNext'),statusMsg:$('statusMsg'),statusSub:$('statusSub'),scoreEl:$('score'),explain:$('explain'),expTitle:$('expTitle'),expDiff:$('expDiff'),expBody:$('expBody')};
 function fillPatternOptions(){for(var j=0;j<PATTERNS.length;j++){var p=document.createElement('option');p.value=PATTERNS[j][0];p.textContent=PATTERNS[j][1];els.patternSel.appendChild(p);}}
 var mode='A',grade='3',pool=[],idx=0,score=0,hintLevel=0,slotTokens=[],bankTokens=[];
 function rebuildPool(){pool=[];for(var i=0;i<ITEMS.length;i++){if(ITEMS[i].grade===grade)pool.push(ITEMS[i]);}idx=0;hintLevel=0;els.qTotal.textContent=String(pool.length||1);loadItem();}
@@ -305,9 +299,6 @@ function checkAnswer(){els.explain.classList.remove('show');var it=pool[idx];if(
     if(it.pattern==='3' && infP.guess==='4') correctPattern='4';
   }
   var patternOk=(userPattern===correctPattern);if(sentenceOk&&patternOk){setStatus(true,'✅ 正解！','英文・5文型が一致。');markAllGood();els.patternWrap.classList.add('good');if(mode==='A'&&it&&it.allowAltInA)showAltGuideIfNeeded(it,userRaw);return;}if(sentenceOk&&!patternOk){markAllGood();els.patternWrap.classList.add('bad');setStatus(false,'英文はOK。5文型が違う。','正しい文型を確認して次へ。');els.expTitle.textContent='ガイド：5文型';els.expDiff.textContent='あなた：'+patternLabel(userPattern)+' ｜ 正解：'+patternLabel(correctPattern);els.expBody.innerHTML=buildStrongPatternGuide(userPattern,correctPattern,userRaw);els.explain.classList.add('show');return;}var userTokens=tokenize(userRaw);var best=bestTargetMatch(userTokens,(mode==='B')?targets:[targets[0]]);if(best)highlightByComparison(userTokens,best.targetTokens);setStatus(false,'❌ 不正解。英文を直そう。','前置詞・語順を確認。');if(best){var diff=prepositionDiff(userTokens,best.targetTokens);if(diff&&(diff.t||diff.kind==='drop')){var expected=(diff.kind==='drop')?'':diff.t;var chosen=isPrep(diff.u)?diff.u:'';els.expTitle.textContent='前置詞解説：'+(expected||'(前置詞なし)');els.expDiff.textContent='あなた：'+userRaw+' / 参考解：'+best.target;els.expBody.innerHTML=buildPrepositionExplanation(expected,chosen);els.explain.classList.add('show');return;}}els.expTitle.textContent='ヒント（正解例）';els.expDiff.textContent='例：'+targets[0];els.expBody.innerHTML='語順と前置詞を確認してください。';els.explain.classList.add('show');}
-function setMode(m){mode=m;els.modeA.classList.toggle('active',m==='A');els.modeB.classList.toggle('active',m==='B');loadItem();}
-els.modeA.addEventListener('click',function(){setMode('A');});
-els.modeB.addEventListener('click',function(){setMode('B');});
 els.gradeSel.addEventListener('change',function(e){grade=e.target.value;rebuildPool();});
 els.btnCheck.addEventListener('click',checkAnswer);els.btnHint.addEventListener('click',showHint);els.btnClear.addEventListener('click',clearAll);els.btnNext.addEventListener('click',nextItem);
 fillPatternOptions();rebuildPool();
