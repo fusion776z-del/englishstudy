@@ -2,7 +2,7 @@
 <html lang="ja"><head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>Idiom Forge — Sentence Builder (A/B + Eiken 3→2) rev8i2</title>
+<title>テーマ — Sentence Builder</title>
 <style>
 :root{--bg1:#050611;--bg2:#0c1330;--ink:#eaf2ff;--muted:rgba(234,242,255,.72);--glass:rgba(9,12,24,.74);--warn:#ff5a7a;--gold:#ffd86b;--ok:#7cffc5;--btnIdle:.32;--btnTouch:.14;--fade:120ms;}
 *{box-sizing:border-box}html,body{height:100%}
@@ -18,6 +18,8 @@ body{margin:0;min-height:100vh;display:grid;place-items:center;color:var(--ink);
 .seg button{appearance:none;border:0;padding:10px 12px;background:transparent;color:rgba(255,255,255,.86);font-weight:900;letter-spacing:.06em;cursor:pointer;opacity:.75}
 .seg button.active{background:rgba(124,255,197,.14);opacity:1}
 .sel{display:flex;gap:8px;align-items:center;padding:8px 10px;border-radius:14px;border:1px solid rgba(124,255,197,.14);background:rgba(10,16,34,.18);color:rgba(255,255,255,.86);font-weight:800;letter-spacing:.04em}
+
+.sel>span{white-space:nowrap;flex:0 0 auto;min-width:3.5em}
 .sel.bad{border-color:rgba(255,90,122,.55);background:rgba(255,90,122,.08)}.sel.good{border-color:rgba(124,255,197,.45);background:rgba(124,255,197,.08)}
 select{max-width:100%;background:transparent;color:rgba(255,255,255,.92);border:0;outline:none;font-weight:900;letter-spacing:.06em;cursor:pointer;padding:2px 4px}
 .card{margin-top:12px;border-radius:18px;background:rgba(10,16,34,.28);border:1px solid rgba(124,255,197,.12);box-shadow:0 10px 26px rgba(0,0,0,.25);padding:12px}
@@ -49,6 +51,10 @@ select{max-width:100%;background:transparent;color:rgba(255,255,255,.92);border:
   .tok{padding:9px 10px;border-radius:14px;}
   .btn{min-width:96px;padding:11px 12px;border-radius:16px;}
 }
+
+#skillWrap{gap:10px}
+#skillWrap select{min-width:140px}
+
 </style>
 </head><body>
 <div class="frame">
@@ -60,7 +66,7 @@ select{max-width:100%;background:transparent;color:rgba(255,255,255,.92);border:
         <select id="gradeSel"><option value="3">3</option><option value="pre2">Pre-2</option><option value="2">2</option></select>
       </div>
 
-  <div class="sel" id="skillWrap"><span>SHELF</span>
+  <div class="sel" id="skillWrap"><span>テーマ</span>
     <select id="skillSel">
       <option value="all">ALL</option>
       <option value="tense">時制（現在/過去/未来）</option>
@@ -81,9 +87,8 @@ select{max-width:100%;background:transparent;color:rgba(255,255,255,.92);border:
     <div class="prompt">
       <div class="meta">
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-          <span id="chipMode" class="chip">MODE A</span>
-          <span id="chipGrade" class="chip gold">GRADE 3</span>
-            <span id=\"chipSkill\" class=\"chip\">SHELF ALL</span>
+<span id="chipGrade" class="chip gold">GRADE 3</span>
+            <span id=\"chipSkill\" class=\"chip\">テーマ ALL</span>
             <span id="chipFocus" class="chip warn">FOCUS: —</span>
           <span class="chip">5文型</span>
         </div>
@@ -188,7 +193,7 @@ function classifyItem(it){
 function updateSkillChip(it){
   var k=(els.skillSel&&els.skillSel.value)?els.skillSel.value:'all';
   if(k==='all' && it) k=classifyItem(it);
-  if(els.chipSkill) els.chipSkill.textContent='SHELF '+skillLabel(k);
+  if(els.chipSkill) els.chipSkill.textContent='テーマ '+skillLabel(k);
 }
 function isWord(t){return /^[A-Za-z]+$/.test(t||'');}
 function lower(t){return (t||'').toLowerCase();}
@@ -290,7 +295,7 @@ function buildStrongPatternGuide(userP, correctP, userRaw){
   html+='<div style="margin-top:10px"><b>救済ルール</b>：授与系は人→物（4）と物→to/for+人（3）を相互に正解扱い。</div>';
   return html;
 }
-var els={gradeSel:$('gradeSel'),skillSel:$('skillSel'),skillWrap:$('skillWrap'),patternSel:$('patternSel'),patternWrap:$('patternWrap'),chipMode:$('chipMode'),chipGrade:$('chipGrade'),chipSkill:$('chipSkill'),chipFocus:$('chipFocus'),qIndex:$('qIndex'),qTotal:$('qTotal'),jpPrompt:$('jpPrompt'),scenePrompt:$('scenePrompt'),slots:$('slots'),bank:$('bank'),btnCheck:$('btnCheck'),btnHint:$('btnHint'),btnClear:$('btnClear'),btnNext:$('btnNext'),statusMsg:$('statusMsg'),statusSub:$('statusSub'),scoreEl:$('score'),explain:$('explain'),expTitle:$('expTitle'),expDiff:$('expDiff'),expBody:$('expBody')};
+var els={gradeSel:$('gradeSel'),skillSel:$('skillSel'),skillWrap:$('skillWrap'),patternSel:$('patternSel'),patternWrap:$('patternWrap'),chipMode:null,chipGrade:$('chipGrade'),chipSkill:$('chipSkill'),chipFocus:$('chipFocus'),qIndex:$('qIndex'),qTotal:$('qTotal'),jpPrompt:$('jpPrompt'),scenePrompt:$('scenePrompt'),slots:$('slots'),bank:$('bank'),btnCheck:$('btnCheck'),btnHint:$('btnHint'),btnClear:$('btnClear'),btnNext:$('btnNext'),statusMsg:$('statusMsg'),statusSub:$('statusSub'),scoreEl:$('score'),explain:$('explain'),expTitle:$('expTitle'),expDiff:$('expDiff'),expBody:$('expBody')};
 function fillPatternOptions(){for(var j=0;j<PATTERNS.length;j++){var p=document.createElement('option');p.value=PATTERNS[j][0];p.textContent=PATTERNS[j][1];els.patternSel.appendChild(p);}}
 var grade='3',skill='all',pool=[],idx=0,score=0,hintLevel=0,slotTokens=[],bankTokens=[];
 function rebuildPool(){
@@ -316,7 +321,7 @@ function markAllGood(){var btns=els.slots.querySelectorAll('button.tok');for(var
 function highlightByComparison(userTokens,targetTokens){var btns=els.slots.querySelectorAll('button.tok');for(var i=0;i<btns.length;i++){btns[i].classList.remove('good');btns[i].classList.remove('bad');var u=(userTokens[i]||'').toLowerCase();var t=(targetTokens[i]||'').toLowerCase();if(u&&t&&u===t)btns[i].classList.add('good');else btns[i].classList.add('bad');}}
 function resetPatternUI(){els.patternSel.value='';els.patternWrap.classList.remove('bad');els.patternWrap.classList.remove('good');}
 function loadItem(){els.explain.classList.remove('show');resetPatternUI();var it=pool[idx]||null;
-  updateSkillChip(it);els.qIndex.textContent=String(Math.min(idx+1,Math.max(1,pool.length)));if(!it){els.jpPrompt.textContent='このGRADEには問題がありません。';els.scenePrompt.textContent='GRADEを変えてください。'; updateSkillChip(null);slotTokens=[];bankTokens=['I','am','ready','.'];renderTokens();return;}els.chipGrade.textContent='GRADE '+(grade==='pre2'?'Pre-2':grade);var focus=(it.focus&&it.focus.length)?it.focus.join(', ').toUpperCase():'—';els.chipFocus.textContent='FOCUS: '+focus;els.chipMode.textContent='MODE A';els.jpPrompt.textContent=it.promptJP;els.scenePrompt.textContent='【英検】'+it.promptJP+'（英文＋文型）';slotTokens=[];bankTokens=it.bank.slice();shuffle(bankTokens);hintLevel=0;els.statusMsg.textContent='英文＋5文型を答えよう。';els.statusSub.textContent='A:基本1解（安全言い換えのみ許可）';renderTokens();}
+  updateSkillChip(it);els.qIndex.textContent=String(Math.min(idx+1,Math.max(1,pool.length)));if(!it){els.jpPrompt.textContent='このGRADEには問題がありません。';els.scenePrompt.textContent='GRADEを変えてください。'; updateSkillChip(null);slotTokens=[];bankTokens=['I','am','ready','.'];renderTokens();return;}els.chipGrade.textContent='GRADE '+(grade==='pre2'?'Pre-2':grade);var focus=(it.focus&&it.focus.length)?it.focus.join(', ').toUpperCase():'—';els.chipFocus.textContent='FOCUS: '+focus;els.jpPrompt.textContent=it.promptJP;els.scenePrompt.textContent='【英検】'+it.promptJP+'（英文＋文型）';slotTokens=[];bankTokens=it.bank.slice();shuffle(bankTokens);hintLevel=0;els.statusMsg.textContent='英文＋5文型を答えよう。';els.statusSub.textContent='A:基本1解（安全言い換えのみ許可）';renderTokens();}
 function nextItem(){if(pool.length===0)return;idx=(idx+1)%pool.length;loadItem();}
 function showHint(){
   var it=pool[idx];if(!it)return;
