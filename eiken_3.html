@@ -535,6 +535,63 @@ function buildHintSVOC(raw, patGuess, verb){
   return lines.join('\n');
 }
 
+
+
+// === PATCH: Strict O1/O2 for SVOO⇄SVO(to/for) rescue items (allowAltInA=true) ===
+function parseDative(tokens){
+  var endPunc={'.':1,'?':1,'!':1,',':1,':':1,';':1};
+  var core=[];
+  for(var i=0;i<tokens.length;i++){
+    var t=tokens[i];
+    if(!endPunc[t]) core.push(t);
+  }
+  var preps={'to':1,'for':1};
+  var S=core[0]||'';
+  var V=core[1]||'';
+  var afterV=core.slice(2);
+
+  // SVO: 物 + to/for + 人
+  var prepPos=-1;
+  for(var j=0;j<afterV.length;j++){
+    var w=(afterV[j]||'').toLowerCase();
+    if(preps[w]){ prepPos=j; break; }
+  }
+  if(prepPos!==-1){
+    var O=afterV.slice(0, prepPos);
+    var prep=afterV[prepPos];
+    var IO=afterV.slice(prepPos+1);
+    if(O.length && IO.length){
+      return {kind:'SVO_PREP', S:S, V:V, O:O.join(' '), prep:prep, IO:IO.join(' ')};
+    }
+  }
+
+  // SVOO: 人 + 物
+  var objPron={'me':1,'him':1,'her':1,'us':1,'them':1,'you':1};
+  if(afterV.length>=2){
+    var first=afterV[0];
+    var firstLow=(first||'').toLowerCase();
+    var looksPerson=!!objPron[firstLow] || (/^[A-Z]/.test(first));
+    if(looksPerson){
+      var O1=first;
+      var O2=afterV.slice(1).join(' ');
+      if(O2){ return {kind:'SVOO', S:S, V:V, O1:O1, O2:O2}; }
+    }
+  }
+  return null;
+}
+
+function buildHintSVOC_Dative(raw, pat, verb, it){
+  if(it && it.allowAltInA && raw && raw.replace(/\s/g,'').length){
+    var dt=parseDative(tokenize(raw));
+    if(dt && dt.kind==='SVOO'){
+      return ['S='+dt.S,'V='+dt.V,'O1(人)='+dt.O1,'O2(物)='+dt.O2,'C=—'].join('\n');
+    }
+    if(dt && dt.kind==='SVO_PREP'){
+      return ['S='+dt.S,'V='+dt.V,'O(物)='+dt.O,'('+dt.prep+' '+dt.IO+')','C=—'].join('\n');
+    }
+  }
+  return buildHintSVOC(raw, pat, verb);
+}
 function showHint(){
   var it=pool[idx];if(!it)return;
   hintLevel=Math.min(3,hintLevel+1);
@@ -542,15 +599,23 @@ function showHint(){
   var inf=(raw&&raw.replace(/\s/g,'').length)? inferPatternFromSentence(raw) : null;
   var patGuess=(inf&&inf.guess)? String(inf.guess) : String(it.pattern||'');
 
+
+// Strict guess for dative alternation items (allowAltInA)
+if(it && it.allowAltInA && raw && raw.replace(/\s/g,'').length){
+  var dt=parseDative(tokenize(raw));
+  if(dt && dt.kind==='SVOO') patGuess='4';
+  if(dt && dt.kind==='SVO_PREP') patGuess='3';
+}
+
   if(hintLevel===1){
-    var msg='HINT 1（S/V/O/C）:\n'+buildHintSVOC(raw, patGuess, inf?inf.verb:'');
+    var msg='HINT 1（S/V/O/C）:\n'+buildHintSVOC_Dative(raw, patGuess, inf?inf.verb:'', it);
     if(inf){ msg+='\n推定文型：'+patternLabel(patGuess)+'（V候補='+inf.verb+'）'; }
     els.statusMsg.textContent=msg;
     els.explain.classList.remove('show');
   } else if(hintLevel===2){
     var tgt=(it.targets&&it.targets.length)? it.targets[0] : '';
     var inf2=(tgt&&tgt.replace(/\s/g,'').length)? inferPatternFromSentence(tgt) : null;
-    var msg2='HINT 2（正解例のS/V/O/C）:\n'+tgt+'\n'+buildHintSVOC(tgt, String(it.pattern||''), inf2?inf2.verb:'');
+    var msg2='HINT 2（正解例のS/V/O/C）:\n'+tgt+'\n'+buildHintSVOC_Dative(tgt, String(it.pattern||''), inf2?inf2.verb:'', it);
     msg2+='\n正解の文型：'+patternLabel(it.pattern);
     els.statusMsg.textContent=msg2;
     els.explain.classList.remove('show');
@@ -582,9 +647,17 @@ function showAltGuideIfNeeded(it,userRaw){
 }
 function checkAnswer(){els.explain.classList.remove('show');var it=pool[idx];if(!it)return;var userPattern=els.patternSel.value;var userRaw=currentSentence();var user=normalizeSentence(userRaw);if(!user||user.replace(/\s/g,'').length===0){setStatus(false,'英文がまだです。','BANKから並べて英文を完成させてください。');return;}var targets=it.targets;var normalizedTargets=[];for(var i=0;i<targets.length;i++)normalizedTargets.push(normalizeSentence(targets[i]));var acceptList=(it&&it.allowAltInA)?normalizedTargets:[normalizedTargets[0]];var sentenceOk=(acceptList.indexOf(user)!==-1);if(userPattern===''){if(sentenceOk){markAllGood();setStatus(false,'英文はOK。5文型を選択しよう。','5文型を選んでから CHECK。');}else{setStatus(false,'英文を直そう。','まず英文を完成。その後 5文型 を選択。');}els.patternWrap.classList.add('bad');return;}var correctPattern=it.pattern;
   var infP=inferPatternFromSentence(userRaw);
+
+// Strict guess for dative alternation items (allowAltInA)
+if(it && it.allowAltInA){
+  var dt=parseDative(tokenize(userRaw));
+  if(dt && dt.kind==='SVOO'){ infP = infP || {}; infP.guess='4'; }
+  if(dt && dt.kind==='SVO_PREP'){ infP = infP || {}; infP.guess='3'; }
+}
+
   // 授与系のSVOO(4) ⇄ SVO+to/for(3) を広く救済
   var altV={give:1,gave:1,send:1,sent:1,show:1,showed:1,teach:1,taught:1,tell:1,told:1,lend:1,lent:1,buy:1,bought:1,make:1,made:1,cook:1,cooked:1,get:1,got:1,find:1,found:1,offer:1,offered:1,bring:1,brought:1,write:1,wrote:1};
-  if(sentenceOk && infP && altV[infP.verb]){
+  if(sentenceOk && it && it.allowAltInA && infP && altV[infP.verb]){
     if(it.pattern==='4' && infP.guess==='3') correctPattern='3';
     if(it.pattern==='3' && infP.guess==='4') correctPattern='4';
   }
