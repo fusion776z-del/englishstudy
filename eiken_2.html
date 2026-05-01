@@ -78,9 +78,34 @@ select option{background:#f3f3f3;color:#111;}
 
 /* Fixed-grade build */
 #gradeWrap{display:none !important;}
+
+/* === EXIT: back to index.html (sticky) === */
+.index-exit{position:sticky;top:0;z-index:1000;display:flex;justify-content:center;padding:10px;
+background:linear-gradient(180deg,rgba(5,6,17,.95),rgba(5,6,17,.75) 60%,rgba(5,6,17,0));}
+.index-exit a{text-decoration:none;font-weight:900;letter-spacing:.08em;padding:10px 18px;
+border-radius:18px;color:#eaf2ff;border:1px solid rgba(124,255,197,.35);
+background:rgba(10,16,34,.65);backdrop-filter:blur(8px);
+box-shadow:0 6px 20px rgba(0,0,0,.35);} 
+.index-exit a:active{transform:scale(.97);} 
+
+/* === In-frame Grade header (top of frame) === */
+.grade-inframe{display:flex;justify-content:center;align-items:center;margin:2px 0 10px 0;}
+.grade-inframe .badge{font-weight:900;letter-spacing:.12em;padding:9px 22px;border-radius:22px;
+  color:#ffd86b;border:1px solid rgba(255,216,107,.45);background:rgba(10,16,34,.55);
+  box-shadow:0 6px 18px rgba(0,0,0,.35);} 
+
+/* Hide old right-aligned grade badge inside topbar */
+#gradeBadge{display:none !important;}
+
 </style>
 </head><body>
+<div class="index-exit">
+  <a href="index.html">← INDEX に戻る</a>
+</div>
+
 <div class="frame">
+  <div class="grade-inframe"><div class="badge">GRADE2</div></div>
+
   <div class="diag" id="diag"></div>
   <div class="topbar">
   <div class="topspacer" aria-hidden="true"></div>
