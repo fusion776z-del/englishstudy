@@ -620,16 +620,31 @@ try{
 (function(){
   const LONGPRESS_MS = 220;      // long-press threshold
   const MOVE_CANCEL_PX = 8;      // cancel long-press if finger moves before activation
+  const TAP_MAX_MS = 220;        // treat as tap if released quickly (<= longpress)
   const TOK_SEL = '.tok';
 
   let timer = null;
   let activeTok = null;
   let startX = 0, startY = 0;
+  let downAt = 0;
+  let moved = false;
   let pressActive = false;
+
+  function isTouchLike(e){
+    return (e && (e.type && e.type.indexOf('touch')===0)) || (e && e.pointerType === 'touch');
+  }
 
   function pt(e){
     if(e && e.touches && e.touches[0]) return {x:e.touches[0].clientX, y:e.touches[0].clientY};
+    if(e && e.changedTouches && e.changedTouches[0]) return {x:e.changedTouches[0].clientX, y:e.changedTouches[0].clientY};
     return {x:e.clientX, y:e.clientY};
+  }
+
+  function clearSelection(){
+    try{
+      const sel = window.getSelection && window.getSelection();
+      if(sel && sel.type === 'Range') sel.removeAllRanges();
+    }catch(_){ }
   }
 
   function clearAll(){
@@ -637,31 +652,47 @@ try{
     if(activeTok){ activeTok.classList.remove('press-ready'); }
     activeTok = null;
     pressActive = false;
+    moved = false;
+    downAt = 0;
+  }
+
+  function markSynthetic(tok){
+    try{ tok.dataset.__syntheticTap = String(Date.now()); }catch(_){ }
+  }
+
+  function isRecentSynthetic(tok){
+    try{
+      const t = tok && tok.dataset && tok.dataset.__syntheticTap;
+      if(!t) return false;
+      const dt = Date.now() - parseInt(t,10);
+      return dt >= 0 && dt < 600;
+    }catch(_){ return false; }
+  }
+
+  function consumeSynthetic(tok){
+    try{ if(tok && tok.dataset) delete tok.dataset.__syntheticTap; }catch(_){ }
   }
 
   function onDown(e){
     const tok = e.target && e.target.closest ? e.target.closest(TOK_SEL) : null;
     if(!tok) return;
 
-    // iOS: prevent text selection/callout from starting
-    if(e.cancelable) e.preventDefault();
-
     const p = pt(e);
     startX = p.x; startY = p.y;
+    downAt = Date.now();
+    moved = false;
 
     // reset
     clearAll();
     activeTok = tok;
 
+    // For touch-like input: prevent iOS text selection/callout from starting
+    if(isTouchLike(e) && e.cancelable) e.preventDefault();
+
     timer = setTimeout(function(){
       pressActive = true;
       if(activeTok) activeTok.classList.add('press-ready');
-
-      // If browser somehow created a selection, clear it.
-      try{
-        const sel = window.getSelection && window.getSelection();
-        if(sel && sel.type === 'Range') sel.removeAllRanges();
-      }catch(_){ }
+      clearSelection();
     }, LONGPRESS_MS);
   }
 
@@ -672,17 +703,43 @@ try{
     const dx = p.x - startX;
     const dy = p.y - startY;
 
+    if((dx*dx + dy*dy) > (MOVE_CANCEL_PX*MOVE_CANCEL_PX)) moved = true;
+
     // If user moves before long-press activates, cancel the press-ready timer (allow existing drag logic)
-    if(!pressActive && timer && (dx*dx + dy*dy) > (MOVE_CANCEL_PX*MOVE_CANCEL_PX)){
+    if(!pressActive && timer && moved){
       clearTimeout(timer); timer = null;
       return;
     }
 
     // Once long-press is active, keep preventing native selection/scroll
-    if(pressActive && e.cancelable) e.preventDefault();
+    if(pressActive && isTouchLike(e) && e.cancelable) e.preventDefault();
   }
 
-  function onUp(){ clearAll(); }
+  function onUp(e){
+    if(!activeTok){ clearAll(); return; }
+
+    const elapsed = downAt ? (Date.now() - downAt) : 9999;
+
+    // If long-press not activated and not moved -> treat as tap: execute existing click behavior immediately
+    if(!pressActive && !moved && elapsed <= TAP_MAX_MS){
+      if(timer){ clearTimeout(timer); timer = null; }
+
+      // prevent the browser from also producing a delayed native click on some platforms
+      if(isTouchLike(e) && e.cancelable) e.preventDefault();
+
+      const tok = activeTok;
+      markSynthetic(tok);
+      // Trigger whatever click handler the app already has (move token to next slot)
+      try{ tok.click(); }catch(_){ }
+
+      // cleanup
+      tok.classList.remove('press-ready');
+      clearAll();
+      return;
+    }
+
+    clearAll();
+  }
 
   const bank = document.getElementById('bank');
   const slots = document.getElementById('slots');
@@ -692,32 +749,40 @@ try{
     // Pointer events
     el.addEventListener('pointerdown', onDown, {passive:false});
     el.addEventListener('pointermove', onMove, {passive:false});
-    el.addEventListener('pointerup', onUp, {passive:true});
-    el.addEventListener('pointercancel', onUp, {passive:true});
+    el.addEventListener('pointerup', onUp, {passive:false});
+    el.addEventListener('pointercancel', onUp, {passive:false});
 
     // Touch fallback (older iOS)
     el.addEventListener('touchstart', onDown, {passive:false});
     el.addEventListener('touchmove', onMove, {passive:false});
-    el.addEventListener('touchend', onUp, {passive:true});
-    el.addEventListener('touchcancel', onUp, {passive:true});
+    el.addEventListener('touchend', onUp, {passive:false});
+    el.addEventListener('touchcancel', onUp, {passive:false});
 
     // Disable long-press context menu on tokens
     el.addEventListener('contextmenu', function(ev){
       if(ev.target && ev.target.closest && ev.target.closest(TOK_SEL)) ev.preventDefault();
     });
+
+    // Prevent duplicate native clicks after our synthetic tap
+    el.addEventListener('click', function(ev){
+      const tok = ev.target && ev.target.closest ? ev.target.closest(TOK_SEL) : null;
+      if(!tok) return;
+      if(isRecentSynthetic(tok) && ev.isTrusted){
+        ev.preventDefault();
+        ev.stopPropagation();
+        if(ev.stopImmediatePropagation) ev.stopImmediatePropagation();
+        consumeSynthetic(tok);
+      }
+    }, true);
   });
 
   // Defensive: if selection happens, clear it during long-press
   document.addEventListener('selectionchange', function(){
     if(!pressActive) return;
-    try{
-      const sel = window.getSelection && window.getSelection();
-      if(sel && sel.type === 'Range') sel.removeAllRanges();
-    }catch(_){ }
+    clearSelection();
   });
 
-  // End press-ready if drag starts elsewhere
-  document.addEventListener('pointerup', onUp, {passive:true});
+  document.addEventListener('pointerup', onUp, {passive:false});
   document.addEventListener('dragstart', onUp, {passive:true});
 })();
 </script>
