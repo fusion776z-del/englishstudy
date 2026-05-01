@@ -109,6 +109,30 @@ box-shadow:0 6px 20px rgba(0,0,0,.35);}
 #skillWrap span{white-space:nowrap;}
 #skillWrap select{flex:1;min-width:0;}
 
+
+
+/* === PATCH: Long-press ready (scale+float) & disable native selection/callout === */
+/* Prevent iOS/Android text range selection & callout while interacting with tokens */
+.bank, .slots { -webkit-user-select: none; user-select: none; }
+.tok {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-drag: none;
+  touch-action: none; /* stop browser panning/selection on long-press */
+}
+
+/* Visual feedback exactly at long-press activation (before dragging) */
+.tok.press-ready{
+  opacity: 1;
+  transform: scale(1.12) translateY(-2px);
+  box-shadow: 0 18px 42px rgba(0,0,0,.55), 0 0 0 1px rgba(255,216,107,.22) inset;
+  border-color: rgba(255,216,107,.50);
+  background: rgba(255,216,107,.12);
+  position: relative;
+  z-index: 10;
+}
 </style>
 </head><body>
 <div class="index-exit">
@@ -525,5 +549,164 @@ try{
   if(typeof els!=='undefined' && els.gradeSel) els.gradeSel.value=FIXED_GRADE;
   if(typeof rebuildPool==='function') rebuildPool();
 }catch(e){}
+</script>
+
+
+<script>
+/* === PATCH: long-press activates 'press-ready' instantly; short tap immediately triggers add; block native selection === */
+(function(){
+  const LONGPRESS_MS = 220;      // long-press threshold
+  const MOVE_CANCEL_PX = 8;      // cancel long-press if finger moves before activation
+  const TAP_MAX_MS = 220;        // treat as tap if released quickly (<= longpress)
+  const TOK_SEL = '.tok';
+
+  let timer = null;
+  let activeTok = null;
+  let startX = 0, startY = 0;
+  let downAt = 0;
+  let moved = false;
+  let pressActive = false;
+
+  function isTouchLike(e){
+    return (e && (e.type && e.type.indexOf('touch')===0)) || (e && e.pointerType === 'touch');
+  }
+
+  function pt(e){
+    if(e && e.touches && e.touches[0]) return {x:e.touches[0].clientX, y:e.touches[0].clientY};
+    if(e && e.changedTouches && e.changedTouches[0]) return {x:e.changedTouches[0].clientX, y:e.changedTouches[0].clientY};
+    return {x:e.clientX, y:e.clientY};
+  }
+
+  function clearSelection(){
+    try{
+      const sel = window.getSelection && window.getSelection();
+      if(sel && sel.type === 'Range') sel.removeAllRanges();
+    }catch(_){ }
+  }
+
+  function clearAll(){
+    if(timer){ clearTimeout(timer); timer = null; }
+    if(activeTok){ activeTok.classList.remove('press-ready'); }
+    activeTok = null;
+    pressActive = false;
+    moved = false;
+    downAt = 0;
+  }
+
+  function markSynthetic(tok){
+    try{ tok.dataset.__syntheticTap = String(Date.now()); }catch(_){ }
+  }
+
+  function isRecentSynthetic(tok){
+    try{
+      const t = tok && tok.dataset && tok.dataset.__syntheticTap;
+      if(!t) return false;
+      const dt = Date.now() - parseInt(t,10);
+      return dt >= 0 && dt < 600;
+    }catch(_){ return false; }
+  }
+
+  function consumeSynthetic(tok){
+    try{ if(tok && tok.dataset) delete tok.dataset.__syntheticTap; }catch(_){ }
+  }
+
+  function onDown(e){
+    const tok = e.target && e.target.closest ? e.target.closest(TOK_SEL) : null;
+    if(!tok) return;
+
+    const p = pt(e);
+    startX = p.x; startY = p.y;
+    downAt = Date.now();
+    moved = false;
+
+    clearAll();
+    activeTok = tok;
+
+    if(isTouchLike(e) && e.cancelable) e.preventDefault();
+
+    timer = setTimeout(function(){
+      pressActive = true;
+      if(activeTok) activeTok.classList.add('press-ready');
+      clearSelection();
+    }, LONGPRESS_MS);
+  }
+
+  function onMove(e){
+    if(!activeTok) return;
+
+    const p = pt(e);
+    const dx = p.x - startX;
+    const dy = p.y - startY;
+
+    if((dx*dx + dy*dy) > (MOVE_CANCEL_PX*MOVE_CANCEL_PX)) moved = true;
+
+    if(!pressActive && timer && moved){
+      clearTimeout(timer); timer = null;
+      return;
+    }
+
+    if(pressActive && isTouchLike(e) && e.cancelable) e.preventDefault();
+  }
+
+  function onUp(e){
+    if(!activeTok){ clearAll(); return; }
+
+    const elapsed = downAt ? (Date.now() - downAt) : 9999;
+
+    if(!pressActive && !moved && elapsed <= TAP_MAX_MS){
+      if(timer){ clearTimeout(timer); timer = null; }
+      if(isTouchLike(e) && e.cancelable) e.preventDefault();
+
+      const tok = activeTok;
+      markSynthetic(tok);
+      try{ tok.click(); }catch(_){ }
+
+      tok.classList.remove('press-ready');
+      clearAll();
+      return;
+    }
+
+    clearAll();
+  }
+
+  const bank = document.getElementById('bank');
+  const slots = document.getElementById('slots');
+  const containers = [bank, slots].filter(Boolean);
+
+  containers.forEach(function(el){
+    el.addEventListener('pointerdown', onDown, {passive:false});
+    el.addEventListener('pointermove', onMove, {passive:false});
+    el.addEventListener('pointerup', onUp, {passive:false});
+    el.addEventListener('pointercancel', onUp, {passive:false});
+
+    el.addEventListener('touchstart', onDown, {passive:false});
+    el.addEventListener('touchmove', onMove, {passive:false});
+    el.addEventListener('touchend', onUp, {passive:false});
+    el.addEventListener('touchcancel', onUp, {passive:false});
+
+    el.addEventListener('contextmenu', function(ev){
+      if(ev.target && ev.target.closest && ev.target.closest(TOK_SEL)) ev.preventDefault();
+    });
+
+    el.addEventListener('click', function(ev){
+      const tok = ev.target && ev.target.closest ? ev.target.closest(TOK_SEL) : null;
+      if(!tok) return;
+      if(isRecentSynthetic(tok) && ev.isTrusted){
+        ev.preventDefault();
+        ev.stopPropagation();
+        if(ev.stopImmediatePropagation) ev.stopImmediatePropagation();
+        consumeSynthetic(tok);
+      }
+    }, true);
+  });
+
+  document.addEventListener('selectionchange', function(){
+    if(!pressActive) return;
+    clearSelection();
+  });
+
+  document.addEventListener('pointerup', onUp, {passive:false});
+  document.addEventListener('dragstart', onUp, {passive:true});
+})();
 </script>
 </body></html>
