@@ -8,9 +8,8 @@
 *{box-sizing:border-box}html,body{height:100%}
 body{margin:0;min-height:100vh;display:grid;place-items:center;color:var(--ink);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(circle at 12% 14%, rgba(124,255,197,.12), transparent 30%),radial-gradient(circle at 82% 22%, rgba(189,163,255,.10), transparent 28%),radial-gradient(circle at 62% 84%, rgba(255,216,107,.10), transparent 30%),linear-gradient(180deg,var(--bg1),var(--bg2) 55%,var(--bg1));padding:max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));overflow-x:hidden;}
 .frame{width:100%;max-width:375px;padding:14px;border-radius:28px;background:var(--glass);backdrop-filter:blur(10px) saturate(1.15);border:1px solid rgba(124,255,197,.20);box-shadow:0 22px 70px rgba(0,0,0,.52),0 0 40px rgba(124,255,197,.08);position:relative;}
-.topbar{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;padding:10px 12px;border-radius:18px;background:rgba(10,16,34,.30);border:1px solid rgba(124,255,197,.14);}
+.topbar{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px 12px;border-radius:18px;background:rgba(10,16,34,.30);border:1px solid rgba(124,255,197,.14);}
 .topcenter{display:flex;justify-content:center;align-items:center;}
-.topleft{display:flex;justify-content:flex-start;align-items:center;}
 .topright{display:flex;justify-content:flex-end;align-items:center;gap:10px;flex-wrap:wrap;}
 .topspacer{min-height:1px;}
 .brand{display:flex;flex-direction:column;gap:2px;min-width:200px}.brand .t{font-weight:900;letter-spacing:.08em;font-size:14px}.brand .s{font-size:11px;color:var(--muted);letter-spacing:.06em}
@@ -55,7 +54,7 @@ select option{background:#f3f3f3;color:#111;}
 
 @media (max-width: 420px){
   .frame{padding:12px;border-radius:22px;}
-  .topbar{grid-template-columns:1fr auto 1fr;gap:8px;}
+  .topbar{grid-template-columns:1fr auto;gap:8px;}
   .topspacer{display:none;}
   .seg button{padding:9px 10px;}
   .jp{font-size:14px;}
@@ -84,16 +83,15 @@ select option{background:#f3f3f3;color:#111;}
 <div class="frame">
   <div class="diag" id="diag"></div>
   <div class="topbar">
-  <div class="topleft" aria-hidden="true"></div>
-  <div class="topcenter">
-    <div class="sel good" id="gradeBadge"><span>GRADEPre1</span></div>
+  <div class="topspacer" aria-hidden="true"></div>
+<div class="topright">
+  <div class="sel good" id="gradeBadge"><span>GRADEPre1</span></div>
     <div class="sel" id="gradeWrap"><span>GRADE</span>
-      <select id="gradeSel" disabled><option value="pre1" selected>pre1</option></select>
-    </div>
-  </div>
-  <div class="topright">
-    <div class="sel" id="skillWrap"><span>SHELF</span>
-      <select id="skillSel">
+        <select id="gradeSel" disabled><option value="pre1" selected>pre1</option></select>
+      </div>
+
+  <div class="sel" id="skillWrap"><span>SHELF</span>
+    <select id="skillSel">
       <option value="all">ALL</option>
       <option value="tense">時制（現在/過去/未来）</option>
       <option value="modal">助動詞（can/will/must/should）</option>
@@ -105,17 +103,17 @@ select option{background:#f3f3f3;color:#111;}
       <option value="verbprep">動詞＋前置詞（look for 等）</option>
  <option value="rel">関係代名詞（who/which/whose）</option>
  <option value="subj">仮定法（if/wish）</option>
-    
  <option value="inv">倒置（Not until / Hardly / Only then）</option>
  <option value="part">分詞構文・付帯状況（Given / Having / With + O + C）</option>
  <option value="emph">強調構文（It is ... that / What ... is ...）</option>
  <option value="usage">語法（insist/demand など + that節の原形）</option>
-</select>
-    </div>
+    </select>
   </div>
+
 </div>
 </div>
-<div class="card">
+
+  <div class="card">
     <div class="prompt">
       <div class="meta">
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
@@ -234,6 +232,15 @@ function containsAny(s, arr){for(var i=0;i<arr.length;i++){if(s.indexOf(arr[i])!
 function classifyItem(it){
   var text=((it.targets||[]).join(' ')+' '+(it.promptScene||'')+' '+(it.promptJP||''));
   var s=normalizeSentence(text);
+ // --- Advanced shelves (Pre-1) ---
+ if(containsAny(s,['not until','hardly','scarcely','no sooner','only then','little did','rarely','seldom','never have','never did','at no point','in no way','on no account','under no circumstances','not only','so anxious was','so unexpected was'])) return 'inv';
+ if(containsAny(s,['given ','having ','with the ','with his ','with her ','with their ','with no ','surrounded by','facing '])) return 'part';
+ if(containsAny(s,['it is ','it was ',' that ','what ']) && (s.indexOf('it is')!=-1 || s.indexOf('it was')!=-1 || s.indexOf('what ')!=-1) && s.indexOf('?')==-1) {
+   if((s.indexOf('it is')!=-1 || s.indexOf('it was')!=-1) && s.indexOf(' that ')!=-1) return 'emph';
+   if(s.indexOf('what ')!=-1 && (s.indexOf(' is ')!=-1 || s.indexOf(' was ')!=-1)) return 'emph';
+ }
+ if(containsAny(s,['insist that','demand that','suggest that','recommend that','propose that','require that','request that','order that','urge that'])) return 'usage';
+
  // --- NEW shelves ---
  if(containsAny(s,[' who ',' which ',' whose ',' whom ',' where ',' why '])) return 'rel';
  if(containsAny(s,[
