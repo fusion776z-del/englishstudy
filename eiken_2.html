@@ -485,31 +485,153 @@ function loadItem(){els.explain.classList.remove('show');resetPatternUI();var it
 function nextItem(){if(pool.length===0)return;idx=(idx+1)%pool.length;loadItem();}
 function prevItem(){if(pool.length===0)return;idx=(idx-1+pool.length)%pool.length;loadItem();}
 
+
+function splitSVOC(raw, pat, verb){
+  var tokens=tokenize(raw);
+  while(tokens.length && !isWord(tokens[tokens.length-1])) tokens.pop();
+  if(!tokens.length) return {S:'',V:'',O:'',C:'',M:'',pat:String(pat||'')};
+
+  var v=verb||pickVerb(tokens.slice(1))||pickVerb(tokens);
+  var vIndex=-1;
+  for(var i=0;i<tokens.length;i++){ if(lower(tokens[i])===v){ vIndex=i; break; } }
+  if(vIndex<0) vIndex=1;
+
+  var S=tokens.slice(0,vIndex).join(' ');
+  var V=tokens[vIndex]||'';
+  var rest=tokens.slice(vIndex+1);
+
+  var det={a:1,an:1,the:1,my:1,your:1,his:1,her:1,our:1,their:1,this:1,that:1,these:1,those:1,some:1,any:1,each:1,every:1};
+  var pro={me:1,him:1,her:1,us:1,them:1,it:1,you:1};
+  // verbs that tend to be SVOC
+  var svocv={make:1,made:1,call:1,called:1,name:1,named:1,keep:1,kept:1,find:1,found:1,consider:1,considered:1,elect:1,elected:1,leave:1,left:1,appoint:1,appointed:1};
+  // verbs that prefer to/for phrase (no SVOO)
+  var toOnly={explain:1,explained:1,introduce:1,introduced:1,describe:1,described:1,suggest:1,suggested:1,propose:1,proposed:1,announce:1,announced:1,report:1,reported:1,mention:1,mentioned:1};
+
+  function join(a){return (a&&a.length)? a.join(' '):'';}
+
+  function splitToForPhrase(arr){
+    for(var k=0;k<arr.length;k++){
+      var t=lower(arr[k]);
+      if(t==='to'||t==='for') return {head:arr.slice(0,k), tail:arr.slice(k)};
+    }
+    return null;
+  }
+
+  var O='',C='',M='';
+  pat=String(pat||'');
+
+  if(pat==='1'){
+    M=join(rest);
+  } else if(pat==='2'){
+    C=join(rest);
+  } else if(pat==='3'){
+    var sp=splitToForPhrase(rest);
+    if(sp){ O=join(sp.head); M=join(sp.tail); }
+    else { O=join(rest); }
+  } else if(pat==='4'){
+    var sp4=splitToForPhrase(rest);
+    if(sp4){
+      O=join(sp4.head); // treat as DO
+      M=join(sp4.tail); // to/for phrase
+    } else {
+      var cut=-1;
+      for(var j=1;j<rest.length;j++){
+        if(det[lower(rest[j])]){ cut=j; break; }
+      }
+      if(cut<0) cut=Math.min(1, rest.length);
+      var io=rest.slice(0,cut);
+      var doo=rest.slice(cut);
+      O=join(io);
+      C=join(doo);
+    }
+  } else if(pat==='5'){
+    // if infinitive appears, treat it as C boundary
+    var idxTo=-1;
+    for(var t=0;t<rest.length;t++){ if(lower(rest[t])==='to'){ idxTo=t; break; } }
+    if(idxTo>0){
+      O=join(rest.slice(0,idxTo));
+      C=join(rest.slice(idxTo));
+    } else {
+      var oEnd=1;
+      var r0=lower(rest[0]||'');
+      if(pro[r0]){
+        oEnd=1;
+      } else if(det[r0]){
+        // take det+noun(+noun) up to an adjective-ish word if looksAdj exists
+        oEnd=Math.min(2, rest.length);
+        if(typeof looksAdj==='function'){
+          for(var u=2;u<rest.length;u++){
+            if(looksAdj(rest[u])){ oEnd=u; break; }
+          }
+        }
+      } else {
+        oEnd=1;
+      }
+      O=join(rest.slice(0,oEnd));
+      C=join(rest.slice(oEnd));
+    }
+  } else {
+    var spX=splitToForPhrase(rest);
+    if(spX){ O=join(spX.head); M=join(spX.tail); }
+    else { O=join(rest); }
+  }
+
+  // if verb is toOnly, force M split
+  if(toOnly[lower(v)] && !M){
+    var spT=splitToForPhrase(rest);
+    if(spT){ O=join(spT.head); M=join(spT.tail); C=''; }
+  }
+
+  return {S:S,V:V,O:O,C:C,M:M,pat:pat,verb:v};
+}
+
+function buildHintSVOC(raw, patGuess, verb){
+  var sp=splitSVOC(raw, patGuess, verb);
+  var lines=[];
+  lines.push('S='+(sp.S||'—'));
+  lines.push('V='+(sp.V||'—'));
+
+  if(sp.pat==='4' && sp.M){
+    lines.push('O(物)='+(sp.O||'—'));
+    lines.push('M='+(sp.M||'—'));
+  } else if(sp.pat==='4'){
+    lines.push('O(人)='+(sp.O||'—'));
+    lines.push('O(物)='+(sp.C||'—'));
+  } else {
+    lines.push('O='+(sp.O||'—'));
+    lines.push('C='+(sp.C||'—'));
+    if(sp.M){ lines.push('M='+(sp.M||'—')); }
+  }
+
+  return lines.join('\n');
+}
+
 function showHint(){
   var it=pool[idx];if(!it)return;
   hintLevel=Math.min(3,hintLevel+1);
   var raw=currentSentence();
   var inf=(raw&&raw.replace(/\s/g,'').length)? inferPatternFromSentence(raw) : null;
+  var patGuess=(inf&&inf.guess)? String(inf.guess) : String(it.pattern||'');
+
   if(hintLevel===1){
-    var msg='HINT 1（文型）: '+patternCoreTips();
-    if(inf){ msg+='\n推定：'+patternLabel(inf.guess)+'（V='+inf.verb+'）'; }
+    var msg='HINT 1（S/V/O/C）:\n'+buildHintSVOC(raw, patGuess, inf?inf.verb:'');
+    if(inf){ msg+='\n推定文型：'+patternLabel(patGuess)+'（V候補='+inf.verb+'）'; }
     els.statusMsg.textContent=msg;
     els.explain.classList.remove('show');
   } else if(hintLevel===2){
-    var msg2='HINT 2（SV↔SVO）: Vの直後をチェック。前置詞→SV寄り / 名詞・代名詞→SVO寄り。';
-    if(inf){ msg2+='\n今の推定：'+patternLabel(inf.guess)+'（'+inf.why+'）'; }
+    var tgt=(it.targets&&it.targets.length)? it.targets[0] : '';
+    var inf2=(tgt&&tgt.replace(/\s/g,'').length)? inferPatternFromSentence(tgt) : null;
+    var msg2='HINT 2（正解例のS/V/O/C）:\n'+tgt+'\n'+buildHintSVOC(tgt, String(it.pattern||''), inf2?inf2.verb:'');
+    msg2+='\n正解の文型：'+patternLabel(it.pattern);
     els.statusMsg.textContent=msg2;
+    els.explain.classList.remove('show');
   } else {
-    els.statusMsg.textContent='HINT 3（答え）: この問題の文型は「'+patternLabel(it.pattern)+'」。理由は下のガイド。';
-    els.expTitle.textContent='強ヒント：5文型ガイド';
-    els.expDiff.textContent='（英文は作ったまま）';
-    els.expBody.innerHTML=patternCoreTips()+'<hr style="border:0;border-top:1px solid rgba(255,255,255,.12);margin:10px 0">'+patternTipsByNumber(it.pattern);
-    if(inf){
-      els.expBody.innerHTML+='<hr style="border:0;border-top:1px solid rgba(255,255,255,.12);margin:10px 0"><b>あなたの文の推定</b>：'+patternLabel(inf.guess)+'（V='+inf.verb+'）<br><span style="color:rgba(234,242,255,.78)">'+inf.why+'</span>';
-    }
-    els.explain.classList.add('show');
+    var tgt2=(it.targets&&it.targets.length)? it.targets[0] : '';
+    els.statusMsg.textContent='HINT 3（答え）: '+tgt2;
+    els.explain.classList.remove('show');
   }
 }
+
 function clearAll(){bankTokens=bankTokens.concat(slotTokens);slotTokens=[];renderTokens();els.explain.classList.remove('show');els.statusMsg.textContent='クリアしました。';}
 function showAltGuideIfNeeded(it,userRaw){
   if(!it||!it.aGuide)return;
@@ -537,7 +659,7 @@ function checkAnswer(){els.explain.classList.remove('show');var it=pool[idx];if(
     if(it.pattern==='4' && infP.guess==='3') correctPattern='3';
     if(it.pattern==='3' && infP.guess==='4') correctPattern='4';
   }
-  var patternOk=(userPattern===correctPattern);if(sentenceOk&&patternOk){setStatus(true,'✅ 正解！','英文・5文型が一致。');markAllGood();els.patternWrap.classList.add('good');if(it&&it.allowAltInA)showAltGuideIfNeeded(it,userRaw);return;}if(sentenceOk&&!patternOk){markAllGood();els.patternWrap.classList.add('bad');setStatus(false,'英文はOK。5文型が違う。','正しい文型を確認して次へ。');els.expTitle.textContent='ガイド：5文型';els.expDiff.textContent='あなた：'+patternLabel(userPattern)+' ｜ 正解：'+patternLabel(correctPattern);els.expBody.innerHTML=buildStrongPatternGuide(userPattern,correctPattern,userRaw);els.explain.classList.add('show');return;}var userTokens=tokenize(userRaw);var best=bestTargetMatch(userTokens,(false)?targets:[targets[0]]);if(best)highlightByComparison(userTokens,best.targetTokens);setStatus(false,'❌ 不正解。英文を直そう。','前置詞・語順を確認。');if(best){var diff=prepositionDiff(userTokens,best.targetTokens);if(diff&&(diff.t||diff.kind==='drop')){var expected=(diff.kind==='drop')?'':diff.t;var chosen=isPrep(diff.u)?diff.u:'';els.expTitle.textContent='前置詞解説：'+(expected||'(前置詞なし)');els.expDiff.textContent='あなた：'+userRaw+' / 参考解：'+best.target;els.expBody.innerHTML=buildPrepositionExplanation(expected,chosen);els.explain.classList.add('show');return;}}els.expTitle.textContent='ヒント（正解例）';els.expDiff.textContent='例：'+targets[0];if(it&&it.aGuide){  var why=(it.aGuide.why||''); var tip=(it.aGuide.tip||'');  els.expBody.innerHTML= why + (tip?('<br><br><b>Tip</b>: '+tip):'');}else{  els.expBody.innerHTML='語順と前置詞を確認してください。';}els.explain.classList.add('show');}
+  var patternOk=(userPattern===correctPattern);if(sentenceOk&&patternOk){setStatus(true,'✅ 正解！','英文・5文型が一致。');markAllGood();els.patternWrap.classList.add('good');if(it&&it.allowAltInA)showAltGuideIfNeeded(it,userRaw);return;}if(sentenceOk&&!patternOk){markAllGood();els.patternWrap.classList.add('bad');setStatus(false,'英文はOK。文型が違う。','HINTで S/V/O/C を確認しよう。');els.explain.classList.remove('show');return;}var userTokens=tokenize(userRaw);var best=bestTargetMatch(userTokens,(false)?targets:[targets[0]]);if(best)highlightByComparison(userTokens,best.targetTokens);setStatus(false,'❌ 不正解。英文を直そう。','前置詞・語順を確認。');if(best){var diff=prepositionDiff(userTokens,best.targetTokens);if(diff&&(diff.t||diff.kind==='drop')){var expected=(diff.kind==='drop')?'':diff.t;var chosen=isPrep(diff.u)?diff.u:'';els.expTitle.textContent='前置詞解説：'+(expected||'(前置詞なし)');els.expDiff.textContent='あなた：'+userRaw+' / 参考解：'+best.target;els.expBody.innerHTML=buildPrepositionExplanation(expected,chosen);els.explain.classList.add('show');return;}}els.expTitle.textContent='ヒント（正解例）';els.expDiff.textContent='例：'+targets[0];if(it&&it.aGuide){  var why=(it.aGuide.why||''); var tip=(it.aGuide.tip||'');  els.expBody.innerHTML= why + (tip?('<br><br><b>Tip</b>: '+tip):'');}else{  els.expBody.innerHTML='語順と前置詞を確認してください。';}els.explain.classList.add('show');}
 els.gradeSel.addEventListener('change',function(e){grade=e.target.value;rebuildPool();});
 els.skillSel.addEventListener('change',function(e){skill=e.target.value;rebuildPool();});
 els.btnCheck.addEventListener('click',checkAnswer);els.btnHint.addEventListener('click',showHint);els.btnClear.addEventListener('click',clearAll);els.btnBack.addEventListener('click',prevItem);els.btnNext.addEventListener('click',nextItem);
