@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="ja"><head>
 <meta charset="UTF-8" />
+<script>/*FRAMEBUSTER_V2*/try{if(window.top!==window.self){window.top.location.href=window.self.location.href;}}catch(e){}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Idiom Forge — Sentence Builder (Eiken Pre-2 / PRE-2) [PRE2-HINTSTYLE-G3]</title>
 <style>
@@ -260,6 +261,17 @@ if(window.__applyAllPatches) window.__applyAllPatches(DATA);
 var PATTERNS=DATA.PATTERNS; var ITEMS=DATA.ITEMS;
 var PREP_EXPLAIN={at:{core:'at=点',rule:'地点/時刻は at',when:['at the station','at 7'],contrast:['inは中']},in:{core:'in=中/範囲',rule:'範囲内なら in',when:['in Tokyo','in the city'],contrast:['atは点']},on:{core:'on=接触/日付',rule:'曜日/日付は on',when:['on Monday'],contrast:['at Mondayは×']},to:{core:'to=到達/受け手',rule:'向かう先/受け手は to',when:['go to school'],contrast:['forは目的']},for:{core:'for=期間/目的',rule:'期間の長さ/〜のためなら for',when:['for three days','for you'],contrast:['sinceは起点']},of:{core:'of=所属/一部',rule:'afraid of など',when:['afraid of dogs'],contrast:['aboutは話題']},with:{core:'with=道具/同伴',rule:'道具/一緒なら with',when:['with a pen'],contrast:['byは手段']},by:{core:'by=期限/手段',rule:'期限なら by',when:['by tomorrow'],contrast:['untilは継続']},from:{core:'from=起点',rule:'from A to B',when:['from 9 to 5'],contrast:['toは到達']},about:{core:'about=話題',rule:'worried about',when:['about the test'],contrast:['ofは所属']},during:{core:'during=期間内',rule:'期間内の出来事なら during',when:['during the meeting'],contrast:['forは長さ']}};
 function isPrep(tok){tok=(tok||'').toLowerCase();return PREP_EXPLAIN.hasOwnProperty(tok);} 
+// --- PATCH: define _preps() (preposition set) to support hint splitting ---
+function _preps(){
+  if(_preps._cache) return _preps._cache;
+  var m={};
+  try{ if(typeof PREP_EXPLAIN==='object' && PREP_EXPLAIN){ for(var k in PREP_EXPLAIN){ if(PREP_EXPLAIN.hasOwnProperty(k)) m[String(k).toLowerCase()]=1; } } }catch(e){}
+  var more=['in','on','at','by','for','from','to','of','with','about','during','into','onto','over','under','between','among','around','across','through','throughout','within','without','along','near','beside','behind','beyond','against','after','before','until','since','as','like','than','regarding','concerning','despite','via'];
+  for(var i=0;i<more.length;i++){ m[more[i]]=1; }
+  return (_preps._cache=m);
+}
+// --- /PATCH ---
+
 function shuffle(arr){for(var i=arr.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=arr[i];arr[i]=arr[j];arr[j]=t;}} 
 function expandContractions(s){var map=[[/\bi'm\b/g,'i am'],[/\byou're\b/g,'you are'],[/\bwe're\b/g,'we are'],[/\bthey're\b/g,'they are'],[/\bhe's\b/g,'he is'],[/\bshe's\b/g,'she is'],[/\bit's\b/g,'it is'],[/\bthat's\b/g,'that is'],[/\bthere's\b/g,'there is'],[/\bcan't\b/g,'cannot'],[/\bwon't\b/g,'will not'],[/\bdon't\b/g,'do not'],[/\bdoesn't\b/g,'does not'],[/\bdidn't\b/g,'did not'],[/\bisn't\b/g,'is not'],[/\baren't\b/g,'are not'],[/\bwasn't\b/g,'was not'],[/\bweren't\b/g,'were not'],[/\bhaven't\b/g,'have not'],[/\bhasn't\b/g,'has not'],[/\bhadn't\b/g,'had not'],[/\bi've\b/g,'i have'],[/\byou've\b/g,'you have'],[/\bwe've\b/g,'we have'],[/\bthey've\b/g,'they have'],[/\bi'll\b/g,'i will'],[/\byou'll\b/g,'you will'],[/\bwe'll\b/g,'we will'],[/\bthey'll\b/g,'they will'],[/\bi'd\b/g,'i would'],[/\byou'd\b/g,'you would'],[/\bhe'd\b/g,'he would'],[/\bshe'd\b/g,'she would'],[/\bthey'd\b/g,'they would'],[/\bwe'd\b/g,'we would']];for(var i=0;i<map.length;i++){s=s.replace(map[i][0],map[i][1]);}return s;} 
 function normalizeSentence(s){var lowered=(s||'').replace(/^\s+|\s+$/g,'').replace(/\s+/g,' ').replace(/\s+([\.,!?;:])/g,'$1').toLowerCase();return expandContractions(lowered);} 
@@ -777,14 +789,50 @@ function buildHintSVM(raw){
   var endPunc={'.':1,'?':1,'!':1,',':1,':':1,';':1};
   var core=[];
   for(var ii=0;ii<coreTokens.length;ii++) if(!endPunc[coreTokens[ii]]) core.push(coreTokens[ii]);
+
   var S_sv = core[0]||'—';
   var V_sv = core[1]||'—';
-  var tail = core.slice(2).join(' ')||'';
+  var tailTokens = core.slice(2);
+
+  // combine modal/aux + lexical verb (will go / have finished / is going)
+  var mod={can:1,will:1,shall:1,may:1,might:1,must:1,should:1,could:1,would:1,have:1,has:1,had:1,am:1,is:1,are:1,was:1,were:1};
+  var v0=String(V_sv||'').toLowerCase();
+  if(mod[v0] && tailTokens.length && isWord(tailTokens[0]||'')){
+    // handle "be going" in SV pattern (Are going to ...)
+    if((v0==='am'||v0==='is'||v0==='are'||v0==='was'||v0==='were') && String(tailTokens[0]).toLowerCase()==='going'){
+      // keep 'be going to' together if possible
+      if(String(tailTokens[1]||'').toLowerCase()==='to'){
+        V_sv = V_sv + ' going to';
+        tailTokens = tailTokens.slice(2);
+      } else {
+        V_sv = V_sv + ' going';
+        tailTokens = tailTokens.slice(1);
+      }
+    } else {
+      V_sv = V_sv + ' ' + tailTokens[0];
+      tailTokens = tailTokens.slice(1);
+    }
+  }
+
+  // fold predicate adjective into V when followed by PP: fell asleep during ...
+  var adj={asleep:1,awake:1};
+  var preps = (typeof _preps==='function') ? _preps() : {in:1,on:1,at:1,by:1,for:1,from:1,to:1,of:1,with:1,about:1,during:1,before:1,after:1,into:1,over:1,under:1,between:1,among:1,around:1,across:1,through:1,within:1,without:1,near:1};
+  if(tailTokens.length>=2){
+    var a0=String(tailTokens[0]||'').toLowerCase();
+    var p1=String(tailTokens[1]||'').toLowerCase();
+    if(adj[a0] && preps[p1]){
+      V_sv = V_sv + ' ' + tailTokens[0];
+      tailTokens = tailTokens.slice(1);
+    }
+  }
+
+  var tail = tailTokens.join(' ')||'';
   var M_sv = (lead? lead : '');
   if(tail) M_sv = (M_sv? (M_sv+' / '+tail) : tail);
   if(!M_sv) M_sv='—';
   return ['S='+S_sv,'V='+V_sv,'O(物)=—','C=—','M='+M_sv].join('\n');
 }
+
 
 function buildHintWithM(raw, patGuess, verb, it){
   var ex = extractLeadingIntro(raw||'');
@@ -1098,5 +1146,458 @@ try{
   document.addEventListener('pointerup', onUp, {passive:false});
   document.addEventListener('dragstart', onUp, {passive:true});
 })();
+
+
+/* =========================================================
+   PATCH v2.3: HINT1 S/V/O/C/M fixes for NEGATION + DO-SUPPORT + NP SUBJECT
+   Fixes:
+   - Declaratives with do/does/did ("She does not want ...", "I do not need ...")
+   - Negative questions with contraction expansion ("Don't you like ...?")
+   - SVC negation + tail adverbs ("He is not late today")
+   - Multi-token NP subjects ("The new phone ...") up to 3 tokens (DET + Adj + N)
+   ========================================================= */
+
+(function(){
+  function L(s){ return String(s||'').toLowerCase(); }
+  function isW(t){ return (typeof isWord==='function') ? isWord(t) : /^[A-Za-z0-9]/.test(String(t||'')); }
+  function detok(arr){ return (typeof _detok==='function') ? _detok(arr) : (arr||[]).join(' ').replace(/\s+([\.,!?;:])/g,'$1'); }
+
+  function expandTokens(tokens){
+    var out=[];
+    var map={
+      "i'm":["I","am"],"you're":["you","are"],"we're":["we","are"],"they're":["they","are"],
+      "he's":["he","is"],"she's":["she","is"],"it's":["it","is"],"that's":["that","is"],"there's":["there","is"],
+      "i've":["I","have"],"you've":["you","have"],"we've":["we","have"],"they've":["they","have"],
+      "i'll":["I","will"],"you'll":["you","will"],"we'll":["we","will"],"they'll":["they","will"],
+      "i'd":["I","would"],"you'd":["you","would"],"we'd":["we","would"],"they'd":["they","would"],
+      "can't":["can","not"],"won't":["will","not"],"shan't":["shall","not"],
+      "don't":["do","not"],"doesn't":["does","not"],"didn't":["did","not"],
+      "isn't":["is","not"],"aren't":["are","not"],"wasn't":["was","not"],"weren't":["were","not"],
+      "haven't":["have","not"],"hasn't":["has","not"],"hadn't":["had","not"],
+      "couldn't":["could","not"],"wouldn't":["would","not"],"shouldn't":["should","not"],"mustn't":["must","not"],
+      "mightn't":["might","not"],"needn't":["need","not"]
+    };
+    for(var i=0;i<(tokens||[]).length;i++){
+      var t=tokens[i];
+      var k=L(t);
+      if(map[k]){ for(var j=0;j<map[k].length;j++) out.push(map[k][j]); }
+      else out.push(t);
+    }
+    return out;
+  }
+
+  function stripEndPunc(tokens){
+    var t=tokens.slice();
+    while(t.length && !isW(t[t.length-1])) t.pop();
+    return t;
+  }
+
+  function prepsSet(){
+    try{ return _preps(); }catch(e){
+      return {in:1,on:1,at:1,by:1,for:1,from:1,to:1,of:1,with:1,about:1,during:1,after:1,before:1,into:1,over:1,under:1,between:1,among:1,around:1,across:1,through:1,within:1,without:1,near:1};
+    }
+  }
+  function isPrep(w){ var p=prepsSet(); return !!p[L(w||'')]; }
+
+  var WH={what:1,who:1,when:1,where:1,why:1,how:1,which:1};
+  var auxDo={do:1,does:1,did:1};
+  var auxBe={am:1,is:1,are:1,was:1,were:1,be:1,been:1,being:1};
+  var auxHave={have:1,has:1,had:1};
+  var auxModal={can:1,will:1,shall:1,may:1,might:1,must:1,should:1,could:1,would:1,need:1,dare:1};
+  var DET={a:1,an:1,the:1,this:1,that:1,these:1,those:1,my:1,your:1,his:1,her:1,our:1,their:1,some:1,any:1,each:1,every:1};
+  var ADV={not:1,ever:1,already:1,just:1,still:1,never:1,always:1,really:1,perhaps:1,maybe:1,usually:1,often:1,sometimes:1};
+
+  function looksParticiple(w){
+    var x=L(w);
+    if(!x) return false;
+    var irr={been:1,done:1,seen:1,known:1,gone:1,made:1,given:1,taken:1,spoken:1,written:1,broken:1,built:1,found:1,kept:1,left:1,told:1,sent:1,bought:1,brought:1};
+    if(irr[x]) return true;
+    return /(ed|en)$/.test(x);
+  }
+  function looksGerund(w){ return /(ing)$/.test(L(w||'')); }
+  function join(arr){ return (arr&&arr.length)? detok(arr).trim():''; }
+
+  function splitObjAndM(rest){
+    var obj=[], m=[];
+    if(!rest || !rest.length) return {obj:'', m:''};
+    if(isPrep(rest[0])) return {obj:'', m:join(rest)};
+    for(var i=0;i<rest.length;i++){
+      if(isPrep(rest[i])){ m = rest.slice(i); break; }
+      obj.push(rest[i]);
+    }
+    return {obj:join(obj), m:join(m)};
+  }
+
+  function isQuestionTokens(tokens){
+    if(!tokens || tokens.length<2) return false;
+    var w0=L(tokens[0]);
+    var w1=L(tokens[1]||'');
+    if(WH[w0] && (auxDo[w1]||auxBe[w1]||auxHave[w1]||auxModal[w1])) return true;
+    if(auxDo[w0]||auxBe[w0]||auxHave[w0]||auxModal[w0]) return true;
+    return false;
+  }
+
+  // Parse questions, including "Do not you ..." from contraction expansion.
+  function parseQuestion(tokens){
+    var t=tokens;
+    var w0=L(t[0]||'');
+    var whLead='';
+    var aux='';
+    var start=0;
+    if(WH[w0] && (auxDo[L(t[1]||'')]||auxBe[L(t[1]||'')]||auxHave[L(t[1]||'')]||auxModal[L(t[1]||'')])){ whLead=t[0]; aux=t[1]; start=2; }
+    else if(auxDo[w0]||auxBe[w0]||auxHave[w0]||auxModal[w0]){ aux=t[0]; start=1; }
+    else return null;
+
+    // Handle neg right after aux (Do NOT you ...)
+    var neg='';
+    while(start < t.length && L(t[start]||'')==='not'){ neg='not'; start++; }
+
+    var subj=[];
+    var i=start;
+    if(i>=t.length) return null;
+    subj.push(t[i]); i++;
+    if(DET[L(subj[0]||'')] && isW(t[i]||'')) { subj.push(t[i]); i++; }
+
+    // mid adv between subject and main verb (You not like ...)
+    var midAdv=[];
+    while(i<t.length && ADV[L(t[i]||'')]){ if(L(t[i])==='not' && !neg) neg='not'; midAdv.push(t[i]); i++; }
+
+    var auxLow=L(aux);
+    var mainVerb='';
+    var mainIndex=i;
+    var auxLabel=aux;
+
+    if(auxBe[auxLow]){
+      if(L(t[i]||'')==='going' && L(t[i+1]||'')==='to' && isW(t[i+2]||'')){
+        auxLabel = aux + ' going to';
+        mainVerb=t[i+2]; mainIndex=i+2;
+      } else if(looksGerund(t[i]||'') || looksParticiple(t[i]||'')){
+        mainVerb=t[i]; mainIndex=i;
+      } else {
+        // copula be
+        mainVerb=aux; mainIndex=i-1;
+      }
+    } else if(auxHave[auxLow]){
+      // Have (ever) done...
+      var j=i;
+      while(j<t.length && ADV[L(t[j]||'')]){ if(L(t[j])==='not' && !neg) neg='not'; j++; }
+      mainVerb=t[j]||''; mainIndex=j;
+      if(!looksParticiple(mainVerb) && looksParticiple(t[j+1]||'')) { mainVerb=t[j+1]; mainIndex=j+1; }
+    } else {
+      // do/modal
+      // skip any leftover adv
+      var j2=i;
+      while(j2<t.length && ADV[L(t[j2]||'')]){ if(L(t[j2])==='not' && !neg) neg='not'; j2++; }
+      mainVerb=t[j2]||''; mainIndex=j2;
+    }
+
+    if(!mainVerb) return null;
+    var rest=t.slice(mainIndex+1);
+
+    // build M label: wh + aux (+ not)
+    var mBits=[];
+    if(whLead) mBits.push(whLead);
+    if(auxLabel){
+      if(neg) mBits.push(auxLabel+' '+neg);
+      else mBits.push(auxLabel);
+    }
+
+    return {wh:whLead, aux:auxLabel, neg:neg, Maux:join(mBits), S:join(subj), Vcore:mainVerb, rest:rest};
+  }
+
+  // Override question fix: V = lexical verb (or be for copula), Aux goes to M.
+  window._svfix_fixQuestionHintMap = function(map, body, patGuess, lead){
+    try{
+      var toks=stripEndPunc(expandTokens(tokenize(body||'')));
+      if(!isQuestionTokens(toks)) return map;
+      var parsed=parseQuestion(toks);
+      if(!parsed) return map;
+
+      var pat=String(patGuess||'');
+      map.S = parsed.S || map.S;
+      map.V = parsed.Vcore || map.V;
+
+      // distribute rest
+      if(pat==='2'){
+        // be-question likely: C from rest (skip not), remainder into M
+        var rt=parsed.rest||[];
+        var neg = (rt.length && L(rt[0])==='not') ? rt.shift() : '';
+        if(rt.length){
+          map.C = rt[0];
+          var tail = rt.slice(1);
+          var tailStr = join(tail);
+          var mParts=[];
+          if(lead) mParts.push(lead);
+          if(parsed.Maux) mParts.push(parsed.Maux);
+          if(neg) mParts.push('not');
+          if(tailStr) mParts.push(tailStr);
+          map.M = mParts.join(' / ') || '—';
+        }
+        map.O='—';
+      } else {
+        // pat 1/3: rest is O or M
+        var objm = splitObjAndM(parsed.rest||[]);
+        if(pat==='3' && objm.obj) map.O = objm.obj;
+        if(pat==='1') map.O='—';
+        var mParts2=[];
+        if(lead) mParts2.push(lead);
+        if(parsed.Maux) mParts2.push(parsed.Maux);
+        if(objm.m) mParts2.push(objm.m);
+        map.M = mParts2.join(' / ') || map.M || '—';
+      }
+
+      return map;
+    }catch(e){ return map; }
+  };
+
+  // Subject rebuild: allow up to 3 tokens for NP (DET + Adj + N)
+  function rebuildSubjectIfNeeded(map, toks){
+    if(!toks || toks.length<2) return map;
+    var s=String(map.S||'');
+    var sTokens=stripEndPunc(expandTokens(tokenize(s)));
+
+    // If empty or just DET => expand
+    if(!s || s==='—' || (sTokens.length===1 && DET[L(sTokens[0]||'')])){
+      if(DET[L(toks[0]||'')]){
+        if(isW(toks[1]||'') && isW(toks[2]||'')) map.S = toks[0]+' '+toks[1]+' '+toks[2];
+        else if(isW(toks[1]||'')) map.S = toks[0]+' '+toks[1];
+        else map.S = toks[0];
+      } else {
+        map.S = toks[0];
+      }
+      return map;
+    }
+
+    // If S is 2 tokens DET+word but sentence begins DET+word+word and current V equals 2nd token => expand to 3
+    if(sTokens.length===2 && DET[L(sTokens[0]||'')] && DET[L(toks[0]||'')] && L(toks[0])===L(sTokens[0]) && isW(toks[1]||'') && isW(toks[2]||'')){
+      var v=String(map.V||'');
+      if(L(v)===L(toks[1]) || L(v)===L(sTokens[1])){
+        map.S = toks[0]+' '+toks[1]+' '+toks[2];
+      }
+    }
+
+    return map;
+  }
+
+  function findStartAfterSubject(toks, subjStr){
+    var sTokens=stripEndPunc(expandTokens(tokenize(String(subjStr||''))));
+    if(!sTokens.length) return (DET[L(toks[0]||'')] && isW(toks[1]||'')) ? 2 : 1;
+    for(var i=0;i<=toks.length-sTokens.length;i++){
+      var ok=true;
+      for(var j=0;j<sTokens.length;j++) if(L(toks[i+j])!==L(sTokens[j])){ ok=false; break; }
+      if(ok) return i+sTokens.length;
+    }
+    return sTokens.length;
+  }
+
+  // Aux fix for declaratives, now includes do/does/did and SVC neg/tail.
+  function fixAuxDeclarative(map, body, patGuess, lead){
+    var toks=stripEndPunc(expandTokens(tokenize(body||'')));
+    if(!toks.length) return map;
+    if(isQuestionTokens(toks)) return map;
+
+    var pat=String(patGuess||'');
+    map = rebuildSubjectIfNeeded(map, toks);
+
+    var start = findStartAfterSubject(toks, map.S);
+    var i=start;
+    while(i<toks.length && !isW(toks[i])) i++;
+    if(i>=toks.length) return map;
+
+    var w=L(toks[i]||'');
+
+    // --- DO-SUPPORT (does/did/do) ---
+    if(auxDo[w]){
+      var j=i+1;
+      var neg='';
+      if(L(toks[j]||'')==='not'){ neg='not'; j++; }
+      var main = toks[j]||'';
+      if(!main) return map;
+      var rest = toks.slice(j+1);
+
+      // V = main verb, O/M from rest
+      map.V = main;
+      if(pat==='3'){
+        var objm=splitObjAndM(rest);
+        if(objm.obj) map.O = objm.obj;
+        var mParts=[];
+        if(lead) mParts.push(lead);
+        if(neg) mParts.push('not');
+        if(objm.m) mParts.push(objm.m);
+        map.M = mParts.join(' / ') || map.M || '—';
+      } else if(pat==='1'){
+        var mParts1=[];
+        if(lead) mParts1.push(lead);
+        if(neg) mParts1.push('not');
+        if(rest.length) mParts1.push(join(rest));
+        map.M = mParts1.join(' / ') || map.M || '—';
+        map.O='—'; map.C='—';
+      } else {
+        // leave other patterns mostly as-is
+        if(neg){
+          map.M = (lead? (lead+' / '):'') + 'not';
+        }
+      }
+      return map;
+    }
+
+    // --- BE / HAVE / MODAL existing logic (simplified) ---
+    var auxPhrase=[];
+    var mainVerb='';
+    var mainIndex=i;
+    function takeAdv(){ while(i<toks.length && ADV[L(toks[i]||'')]){ auxPhrase.push(toks[i]); i++; } }
+
+    if(auxModal[w]){
+      auxPhrase.push(toks[i]); i++; takeAdv();
+      if(auxHave[L(toks[i]||'')]){ auxPhrase.push(toks[i]); i++; takeAdv(); }
+      if(L(toks[i]||'')==='to' && isW(toks[i+1]||'')){
+        auxPhrase.push(toks[i]);
+        mainVerb=toks[i+1]; mainIndex=i+1;
+      } else { mainVerb=toks[i]||''; mainIndex=i; }
+    }
+    else if(auxHave[w]){
+      if(L(toks[i+1]||'')==='to' && isW(toks[i+2]||'')){
+        auxPhrase.push(toks[i]); auxPhrase.push(toks[i+1]);
+        mainVerb=toks[i+2]; mainIndex=i+2;
+      } else {
+        var la=toks[i+1]||'';
+        var looksAux = looksParticiple(la) || L(la)==='been' || ADV[L(la||'')];
+        if(looksAux){ auxPhrase.push(toks[i]); i++; takeAdv(); mainVerb=toks[i]||''; mainIndex=i; }
+        else { mainVerb=toks[i]; mainIndex=i; }
+      }
+    }
+    else if(auxBe[w]){
+      if(L(toks[i+1]||'')==='going' && L(toks[i+2]||'')==='to' && isW(toks[i+3]||'')){
+        auxPhrase.push(toks[i]); auxPhrase.push(toks[i+1]); auxPhrase.push(toks[i+2]);
+        mainVerb=toks[i+3]; mainIndex=i+3;
+      } else if(looksGerund(toks[i+1]||'') || looksParticiple(toks[i+1]||'')){
+        auxPhrase.push(toks[i]);
+        mainVerb=toks[i+1]; mainIndex=i+1;
+      } else {
+        mainVerb=toks[i]; mainIndex=i;
+      }
+    } else {
+      mainVerb=toks[i]; mainIndex=i;
+    }
+
+    if(!mainVerb) return map;
+
+    var vPhrase = (auxPhrase.length? (join(auxPhrase)+' '+mainVerb) : mainVerb).trim();
+
+    if(pat==='2'){
+      // SVC negation + tail: is not late today => C=late, M=not / today
+      var beTok='';
+      for(var k=start;k<=mainIndex;k++){
+        if(auxBe[L(toks[k]||'')]){ beTok=toks[k]; break; }
+      }
+      map.V = beTok || map.V || mainVerb;
+
+      var restC = toks.slice(mainIndex+1);
+      var neg2='';
+      if(restC.length && L(restC[0])==='not'){ neg2='not'; restC=restC.slice(1); }
+
+      if(!auxBe[L(mainVerb||'')] && (auxPhrase.length && auxBe[L(auxPhrase[auxPhrase.length-1]||'')])){
+        // am worried about ...
+        map.C = mainVerb;
+        var sp = splitObjAndM(restC);
+        var mPartsC=[];
+        if(lead) mPartsC.push(lead);
+        if(neg2) mPartsC.push('not');
+        if(sp.m) mPartsC.push(sp.m);
+        if(sp.obj) mPartsC.push(sp.obj);
+        map.M = mPartsC.join(' / ') || map.M || '—';
+      } else {
+        // is open from 9 to 5 / is late today
+        if(restC.length){
+          map.C = restC[0];
+          var tail = restC.slice(1);
+          var tailStr = join(tail);
+          var mPartsC2=[];
+          if(lead) mPartsC2.push(lead);
+          if(neg2) mPartsC2.push('not');
+          if(tailStr) mPartsC2.push(tailStr);
+          map.M = mPartsC2.join(' / ') || map.M || '—';
+        }
+      }
+      map.O='—';
+      return map;
+    }
+
+    if(pat==='1'){
+      map.V = vPhrase;
+      var rest1 = toks.slice(mainIndex+1);
+      var m = join(rest1);
+      if(m){ map.M = (lead?lead+' / ':'') + m; }
+      map.O='—'; map.C='—';
+      return map;
+    }
+
+    if(pat==='3'){
+      map.V = vPhrase;
+      var rest2 = toks.slice(mainIndex+1);
+      var objm2 = splitObjAndM(rest2);
+      if(objm2.obj) map.O = objm2.obj;
+      var mParts3=[];
+      if(lead) mParts3.push(lead);
+      if(objm2.m) mParts3.push(objm2.m);
+      map.M = mParts3.join(' / ') || map.M || '—';
+      return map;
+    }
+
+    return map;
+  }
+
+  // Override buildHintWithM to apply fixes.
+  window.buildHintWithM = function(raw, patGuess, verb, it){
+    var ex = extractLeadingIntro(raw||'');
+    var lead = ex.m;
+    var body = ex.rest || (raw||'');
+
+    var pat=String(patGuess||'');
+    var base;
+    if(pat==='1') base = buildHintSVM(raw||'');
+    else base = (typeof buildHintSVOC_Dative==='function') ? buildHintSVOC_Dative(body, patGuess, verb, it) : buildHintSVOC(body, patGuess, verb);
+
+    var map=_hintToMap(base);
+
+    // keep original SVO recovery/cleanup
+    if(pat==='3' && (!map.O || map.O==='—')){
+      var rec=_simpleObjectForSVO(body);
+      if(rec.obj){
+        map.O=rec.obj;
+        if(rec.tail){
+          map.M = (lead? lead:'');
+          map.M = (map.M? (map.M+' / '+rec.tail) : rec.tail);
+        }
+      }
+    }
+    if(pat==='3' && map.O && map.O!=='—'){
+      var sp=_splitObjectTrailingPP(map.O);
+      if(sp.tail){
+        map.O = sp.obj || map.O;
+        var m2=(lead?lead:'');
+        if(map.M && map.M!=='—') m2=(m2? (m2+' / '+map.M) : map.M);
+        m2=(m2? (m2+' / '+sp.tail) : sp.tail);
+        map.M=m2||'—';
+      }
+    }
+
+    // apply question fix then declarative aux/do fix
+    map = window._svfix_fixQuestionHintMap(map, body, patGuess, lead);
+    map = fixAuxDeclarative(map, body, patGuess, lead);
+
+    // ensure intro lead in M if still empty
+    if(lead){
+      if(!map.M || map.M==='—') map.M=lead;
+      else if(String(map.M).indexOf(lead)===-1) map.M = lead + ' / ' + map.M;
+    }
+
+    map.S = map.S||'—'; map.V = map.V||'—'; map.O = map.O||'—'; map.C = map.C||'—'; map.M = map.M||'—';
+    return _mapToHint(map);
+  };
+
+})();
+
+/* ======================= END PATCH v2.3 ======================= */
 </script>
 </body></html>
