@@ -258,6 +258,23 @@ function b64ToUtf8(b64){var bin=atob(b64);var esc='';for(var i=0;i<bin.length;i+
 var DATA=JSON.parse(b64ToUtf8(PAYLOAD_B64));
 if(window.__applyAllPatches) window.__applyAllPatches(DATA);
 
+
+// === SVFIX: patch pattern for I wish-clause (Q79) ===
+(function(){
+  try{
+    var items=DATA && DATA.ITEMS ? DATA.ITEMS : [];
+    for(var i=0;i<items.length;i++){
+      var it=items[i];
+      if(!it || !it.targets) continue;
+      for(var k=0;k<it.targets.length;k++){
+        if(String(it.targets[k]||'')==='I wish she were here.' || String(it.targets[k]||'')==='I wish she was here.') {
+          it.pattern='3'; // SVO
+          break;
+        }
+      }
+    }
+  }catch(e){}
+})();
 var PATTERNS=DATA.PATTERNS; var ITEMS=DATA.ITEMS;
 var PREP_EXPLAIN={at:{core:'at=点',rule:'地点/時刻は at',when:['at the station','at 7'],contrast:['inは中']},in:{core:'in=中/範囲',rule:'範囲内なら in',when:['in Tokyo','in the city'],contrast:['atは点']},on:{core:'on=接触/日付',rule:'曜日/日付は on',when:['on Monday'],contrast:['at Mondayは×']},to:{core:'to=到達/受け手',rule:'向かう先/受け手は to',when:['go to school'],contrast:['forは目的']},for:{core:'for=期間/目的',rule:'期間の長さ/〜のためなら for',when:['for three days','for you'],contrast:['sinceは起点']},of:{core:'of=所属/一部',rule:'afraid of など',when:['afraid of dogs'],contrast:['aboutは話題']},with:{core:'with=道具/同伴',rule:'道具/一緒なら with',when:['with a pen'],contrast:['byは手段']},by:{core:'by=期限/手段',rule:'期限なら by',when:['by tomorrow'],contrast:['untilは継続']},from:{core:'from=起点',rule:'from A to B',when:['from 9 to 5'],contrast:['toは到達']},about:{core:'about=話題',rule:'worried about',when:['about the test'],contrast:['ofは所属']},during:{core:'during=期間内',rule:'期間内の出来事なら during',when:['during the meeting'],contrast:['forは長さ']}};
 function isPrep(tok){tok=(tok||'').toLowerCase();return PREP_EXPLAIN.hasOwnProperty(tok);} 
@@ -850,6 +867,103 @@ function _svfix_fixQuestionHintMap(map, body, patGuess, lead){
 }
 
 function buildHintWithM(raw, patGuess, verb, it){
+  function _svfix_normSent(s){
+    return String(s||'').replace(/,/g,'').replace(/\s+/g,' ').trim().replace(/[.?!]+$/,'').toLowerCase();
+  }
+  var __n=_svfix_normSent(raw);
+  // === Targeted fixes (Q16–40) ===
+  if(__n==='the bus arrived on time'){
+    return ['S=The bus','V=arrived','O(物)=—','C=—','M=on time'].join('\n');
+  }
+  if(__n==='i do not have a dog' || __n==="i don't have a dog"){
+    return ['S=I','V=do not have','O(物)=a dog','C=—','M=—'].join('\n');
+  }
+  if(__n==='he did not go to school yesterday' || __n==="he didn't go to school yesterday"){
+    return ['S=He','V=did not go','O(物)=—','C=—','M=to school yesterday'].join('\n');
+  }
+  if(__n==='we are not busy today' || __n==="we're not busy today"){
+    return ['S=We','V=are not','O(物)=—','C=busy','M=today'].join('\n');
+  }
+  if(__n==='they do not eat meat' || __n==="they don't eat meat"){
+    return ['S=They','V=do not eat','O(物)=meat','C=—','M=—'].join('\n');
+  }
+  if(__n==='do not run in the hallway' || __n==="don't run in the hallway"){
+    return ['S=(You)','V=do not run','O(物)=—','C=—','M=in the hallway'].join('\n');
+  }
+
+  // === Targeted fixes (Q41–60) ===
+  if(__n==='i eat dinner when i get home'){
+    return ['S=I','V=eat','O(物)=dinner','C=—','M=when I get home'].join('\n');
+  }
+  if(__n==='i can swim'){
+    return ['S=I','V=can swim','O(物)=—','C=—','M=—'].join('\n');
+  }
+  if(__n==='i will help you' || __n==="i'll help you"){
+    return ['S=I','V=will help','O(物)=you','C=—','M=—'].join('\n');
+  }
+  if(__n==='you must wear a helmet'){
+    return ['S=You','V=must wear','O(物)=a helmet','C=—','M=—'].join('\n');
+  }
+  if(__n==='you must wear the helmet'){
+    return ['S=You','V=must wear','O(物)=the helmet','C=—','M=—'].join('\n');
+  }
+  if(__n==='you should drink water'){
+    return ['S=You','V=should drink','O(物)=water','C=—','M=—'].join('\n');
+  }
+  if(__n==='it may rain today'){
+    return ['S=It','V=may rain','O(物)=—','C=—','M=today'].join('\n');
+  }
+  if(__n==='i look for my keys'){
+    return ['S=I','V=look for','O(物)=my keys','C=—','M=—'].join('\n');
+  }
+
+  // === Targeted fixes (Q64–80) ===
+  if(__n==='we depend on our parents'){
+    return ['S=We','V=depend on','O(物)=our parents','C=—','M=—'].join('\n');
+  }
+  if(__n==='i ran into my friend yesterday'){
+    return ['S=I','V=ran into','O(物)=my friend','C=—','M=yesterday'].join('\n');
+  }
+  if(__n==='i am looking for my keys'){
+    return ['S=I','V=am looking for','O(物)=my keys','C=—','M=—'].join('\n');
+  }
+  if(__n==='many students like music'){
+    return ['S=Many students','V=like','O(物)=music','C=—','M=—'].join('\n');
+  }
+  if(__n==='if it rains i will stay home'){
+    return ['S=I','V=will stay','O(物)=—','C=—','M=If it rains / home'].join('\n');
+  }
+  if(__n==='if it rains i will remain at home'){
+    return ['S=I','V=will remain','O(物)=—','C=—','M=If it rains / at home'].join('\n');
+  }
+  if(__n==='if i had time i would help you'){
+    return ['S=I','V=would help','O(物)=you','C=—','M=If I had time'].join('\n');
+  }
+  if(__n==='if i had more time i would help you'){
+    return ['S=I','V=would help','O(物)=you','C=—','M=If I had more time'].join('\n');
+  }
+  if(__n==='if i were you i would study harder'){
+    return ['S=I','V=would study','O(物)=—','C=—','M=If I were you / harder'].join('\n');
+  }
+  if(__n==='if i were you i would study more'){
+    return ['S=I','V=would study','O(物)=—','C=—','M=If I were you / more'].join('\n');
+  }
+  if(__n==='unless he comes we will leave'){
+    return ['S=we','V=will leave','O(物)=—','C=—','M=Unless he comes'].join('\n');
+  }
+  if(__n==='if he does not come we will leave'){
+    return ['S=we','V=will leave','O(物)=—','C=—','M=If he does not come'].join('\n');
+  }
+  if(__n==='i wish she were here'){
+    return ['S=I','V=wish','O(物)=(that) she were here','C=—','M=—'].join('\n');
+  }
+  if(__n==='i wish she was here'){
+    return ['S=I','V=wish','O(物)=(that) she was here','C=—','M=—'].join('\n');
+  }
+  if(__n==='if i get up early i will run'){
+    return ['S=I','V=will run','O(物)=—','C=—','M=If I get up early'].join('\n');
+  }
+
   var ex = extractLeadingIntro(raw||'');
   var lead = ex.m;
   var body = ex.rest || (raw||'');
@@ -888,11 +1002,33 @@ function buildHintWithM(raw, patGuess, verb, it){
     else if(map.M.indexOf(lead)===-1) map.M = lead + ' / ' + map.M;
   }
 
+  map = _svfix_fixModalInHintMap(map);
+
   // Fix yes/no & WH questions: move auxiliary into M and normalize S/V order
   map = _svfix_fixQuestionHintMap(map, body, patGuess, lead);
 
   map.S = map.S||'—'; map.V = map.V||'—'; map.O = map.O||'—'; map.C = map.C||'—'; map.M = map.M||'—';
   return _mapToHint(map);
+}
+
+function _svfix_fixModalInHintMap(map){
+  try{
+    if(!map || !map.S || !map.V) return map;
+    var s=String(map.S||'').trim();
+    var v=String(map.V||'').trim();
+    var m = s.match(/^(I|You|He|She|We|They)\s+(will|can|must|should|may|might|could|would)\s*$/i);
+    if(m){
+      var subj=m[1];
+      var modal=m[2];
+      if(!new RegExp('^'+modal+'\\b','i').test(v)){
+        map.S=subj;
+        map.V=modal+' '+v;
+      } else {
+        map.S=subj;
+      }
+    }
+  }catch(e){}
+  return map;
 }
 
 
@@ -938,11 +1074,10 @@ function showHint(){
   } else {
     // HINT3:
   var allArr=(it.targets&&it.targets.length)? it.targets : [];
-  var hasToFor=false;
-  for(var kk=0;kk<allArr.length;kk++){ if(/\b(to|for)\b/i.test(String(allArr[kk]||''))){ hasToFor=true; break; } }
+  var isAlt = (typeof _svfix_isDativeAltSet==='function') ? _svfix_isDativeAltSet(allArr) : false;
 
   // Only label per-sentence patterns for true dative alternation (to/for form present)
-  if(it && it.allowAltInA && hasToFor && allArr.length>=2){
+  if(isAlt && allArr.length>=2){
     var parts=[];
     for(var k=0;k<allArr.length;k++){
       var s=allArr[k];
