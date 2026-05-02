@@ -258,6 +258,35 @@ function b64ToUtf8(b64){var bin=atob(b64);var esc='';for(var i=0;i<bin.length;i+
 var DATA=JSON.parse(b64ToUtf8(PAYLOAD_B64));
 if(window.__applyAllPatches) window.__applyAllPatches(DATA);
 
+// === SVFIX: Q105–134 data patch (Q131 targets/bank, Q126 pattern) ===
+(function(){
+  try{
+    var items = (DATA && DATA.ITEMS) ? DATA.ITEMS : [];
+    for(var i=0;i<items.length;i++){
+      var it = items[i];
+      if(!it || !it.id) continue;
+
+      // Q126: went (SV) not SVO
+      if(it.id==='g3_part_new_02'){
+        it.pattern='1';
+      }
+
+      // Q131: fix to natural answer; update BANK + HINT2 (targets[0])
+      if(it.id==='g3_part_new_07'){
+        var newT = 'Because it was raining, we stayed home.';
+        it.targets = [newT];
+        // Build a minimal bank that leads to the correct answer
+        if(typeof tokenize==='function') it.bank = tokenize(newT);
+        else it.bank = ['Because','it','was','raining',',','we','stayed','home','.'];
+        it.allowAltInA = false;
+        it.aGuide = null;
+        it.pattern = '1';
+      }
+    }
+  }catch(e){}
+})();
+
+
 
 // === SVFIX: patch pattern for I wish-clause (Q79) ===
 (function(){
@@ -271,6 +300,52 @@ if(window.__applyAllPatches) window.__applyAllPatches(DATA);
           it.pattern='3'; // SVO
           break;
         }
+      }
+    }
+  }catch(e){}
+})();
+
+// === SVFIX: mark items for Q81–100 (use inferred pattern & better HINT3) ===
+(function(){
+  try{
+    var keyTargets={
+      'If he studies hard, he can pass.':1,
+      'If he studies hard, he will pass.':1,
+      'If I had known that, I would have told you.':1,
+      'If I had known it, I would have told you.':1,
+      'If I had enough money, I would buy the book.':1,
+      'If I had enough money, I would buy it.':1,
+      'If I am busy, I will call you later.':1,
+      'If I am busy, I will contact you later.':1,
+      'Here is the answer.':1,
+      'Here is an answer.':1,
+      'On the desk is a book.':1,
+      'On the desk is the book.':1,
+      'Never does he tell a lie.':1,
+      'Never does he lie.':1,
+      'Never have I seen such a view.':1,
+      'Never have I seen such a beautiful view.':1,
+      'Only then did I understand.':1,
+      'Only then did I understand the problem.':1,
+      'There is a park near here.':1,
+      'There is a park around here.':1,
+      'There are many people in the park.':1,
+      'There are many people at the park.':1,
+      'No sooner did he arrive than I called him.':1,
+      'No sooner did he arrive than I phoned him.':1,
+      'Not only is she kind, but she is also honest.':1,
+      'Not only is she kind, but she is honest too.':1,
+      'The girl who is singing is my sister.':1,
+      'The girl that is singing is my sister.':1,
+      'I know the boy who is in the park.':1,
+      'I know the boy that is in the park.':1
+    };
+    var items=DATA && DATA.ITEMS ? DATA.ITEMS : [];
+    for(var i=0;i<items.length;i++){
+      var it=items[i];
+      if(!it || !it.targets) continue;
+      for(var k=0;k<it.targets.length;k++){
+        if(keyTargets[String(it.targets[k]||'')]){ it._svfix_useInferPattern=true; break; }
       }
     }
   }catch(e){}
@@ -751,7 +826,231 @@ function _splitObjectTrailingPP(objStr){
 }
 
 function buildHintSVM(raw){
-  var ex = extractLeadingIntro(raw||'');
+  
+  // === Targeted fixes (Q81–100) ===
+  if(__n==='if he studies hard he can pass'){
+    return ['S=he','V=can pass','O(物)=—','C=—','M=If he studies hard'].join('\n');
+  }
+  if(__n==='if he studies hard he will pass'){
+    return ['S=he','V=will pass','O(物)=—','C=—','M=If he studies hard'].join('\n');
+  }
+  if(__n==='if i had known that i would have told you'){
+    return ['S=I','V=would have told','O(物)=you','C=—','M=If I had known that'].join('\n');
+  }
+  if(__n==='if i had known it i would have told you'){
+    return ['S=I','V=would have told','O(物)=you','C=—','M=If I had known it'].join('\n');
+  }
+  if(__n==='if i had enough money i would buy the book'){
+    return ['S=I','V=would buy','O(物)=the book','C=—','M=If I had enough money'].join('\n');
+  }
+  if(__n==='if i had enough money i would buy it'){
+    return ['S=I','V=would buy','O(物)=it','C=—','M=If I had enough money'].join('\n');
+  }
+  if(__n==='if i am busy i will call you later'){
+    return ['S=I','V=will call','O(物)=you','C=—','M=If I am busy / later'].join('\n');
+  }
+  if(__n==='if i am busy i will contact you later'){
+    return ['S=I','V=will contact','O(物)=you','C=—','M=If I am busy / later'].join('\n');
+  }
+  if(__n==='here is the answer'){
+    return ['S=the answer','V=is','O(物)=—','C=here','M=—'].join('\n');
+  }
+  if(__n==='here is an answer'){
+    return ['S=an answer','V=is','O(物)=—','C=here','M=—'].join('\n');
+  }
+  if(__n==='on the desk is a book'){
+    return ['S=a book','V=is','O(物)=—','C=on the desk','M=—'].join('\n');
+  }
+  if(__n==='on the desk is the book'){
+    return ['S=the book','V=is','O(物)=—','C=on the desk','M=—'].join('\n');
+  }
+  if(__n==='never does he tell a lie'){
+    return ['S=he','V=does tell','O(物)=a lie','C=—','M=Never'].join('\n');
+  }
+  if(__n==='never does he lie'){
+    return ['S=he','V=does lie','O(物)=—','C=—','M=Never'].join('\n');
+  }
+  if(__n==='never have i seen such a view'){
+    return ['S=I','V=have seen','O(物)=such a view','C=—','M=Never'].join('\n');
+  }
+  if(__n==='never have i seen such a beautiful view'){
+    return ['S=I','V=have seen','O(物)=such a beautiful view','C=—','M=Never'].join('\n');
+  }
+  if(__n==='only then did i understand'){
+    return ['S=I','V=did understand','O(物)=—','C=—','M=Only then'].join('\n');
+  }
+  if(__n==='only then did i understand the problem'){
+    return ['S=I','V=did understand','O(物)=the problem','C=—','M=Only then'].join('\n');
+  }
+  if(__n==='there is a park near here'){
+    return ['S=There','V=is','O(物)=—','C=a park','M=near here'].join('\n');
+  }
+  if(__n==='there is a park around here'){
+    return ['S=There','V=is','O(物)=—','C=a park','M=around here'].join('\n');
+  }
+  if(__n==='there are many people in the park'){
+    return ['S=There','V=are','O(物)=—','C=many people','M=in the park'].join('\n');
+  }
+  if(__n==='there are many people at the park'){
+    return ['S=There','V=are','O(物)=—','C=many people','M=at the park'].join('\n');
+  }
+  if(__n==='no sooner did he arrive than i called him'){
+    return ['S=he','V=did arrive','O(物)=—','C=—','M=No sooner / than I called him'].join('\n');
+  }
+  if(__n==='no sooner did he arrive than i phoned him'){
+    return ['S=he','V=did arrive','O(物)=—','C=—','M=No sooner / than I phoned him'].join('\n');
+  }
+  if(__n==='not only is she kind but she is also honest'){
+    return ['S=she','V=is','O(物)=—','C=kind','M=Not only / but she is also honest'].join('\n');
+  }
+  if(__n==='not only is she kind but she is honest too'){
+    return ['S=she','V=is','O(物)=—','C=kind','M=Not only / but she is honest too'].join('\n');
+  }
+  if(__n==='the girl who is singing is my sister'){
+    return ['S=The girl who is singing','V=is','O(物)=—','C=my sister','M=—'].join('\n');
+  }
+  if(__n==='the girl that is singing is my sister'){
+    return ['S=The girl that is singing','V=is','O(物)=—','C=my sister','M=—'].join('\n');
+  }
+  if(__n==='i know the boy who is in the park'){
+    return ['S=I','V=know','O(物)=the boy who is in the park','C=—','M=—'].join('\n');
+  }
+  if(__n==='i know the boy that is in the park'){
+    return ['S=I','V=know','O(物)=the boy that is in the park','C=—','M=—'].join('\n');
+  }
+
+  // === Targeted fixes (Q105–134) ===
+  // Passive voice (be + p.p.)
+  if(__n==='the window was broken by tom'){
+    return ['S=The window','V=was broken','O(物)=—','C=—','M=by Tom'].join('\n');
+  }
+  if(__n==='the window was broken by ken'){
+    return ['S=The window','V=was broken','O(物)=—','C=—','M=by Ken'].join('\n');
+  }
+  if(__n==='the room is cleaned every day'){
+    return ['S=The room','V=is cleaned','O(物)=—','C=—','M=every day'].join('\n');
+  }
+  if(__n==='the room is cleaned every morning'){
+    return ['S=The room','V=is cleaned','O(物)=—','C=—','M=every morning'].join('\n');
+  }
+  if(__n==='dinner was made by my mother'){
+    return ['S=Dinner','V=was made','O(物)=—','C=—','M=by my mother'].join('\n');
+  }
+  if(__n==='dinner was cooked by my mother'){
+    return ['S=Dinner','V=was cooked','O(物)=—','C=—','M=by my mother'].join('\n');
+  }
+  if(__n==='the letter was sent yesterday'){
+    return ['S=The letter','V=was sent','O(物)=—','C=—','M=yesterday'].join('\n');
+  }
+  if(__n==='the letter was mailed yesterday'){
+    return ['S=The letter','V=was mailed','O(物)=—','C=—','M=yesterday'].join('\n');
+  }
+  if(__n==='english is spoken all over the world'){
+    return ['S=English','V=is spoken','O(物)=—','C=—','M=all over the world'].join('\n');
+  }
+  if(__n==='english is used all over the world'){
+    return ['S=English','V=is used','O(物)=—','C=—','M=all over the world'].join('\n');
+  }
+  if(__n==='cakes are sold in this shop'){
+    return ['S=Cakes','V=are sold','O(物)=—','C=—','M=in this shop'].join('\n');
+  }
+  if(__n==='cakes are sold at this shop'){
+    return ['S=Cakes','V=are sold','O(物)=—','C=—','M=at this shop'].join('\n');
+  }
+  if(__n==='the door was closed with a key'){
+    return ['S=The door','V=was closed','O(物)=—','C=—','M=with a key'].join('\n');
+  }
+  if(__n==='the door was opened with a key'){
+    return ['S=The door','V=was opened','O(物)=—','C=—','M=with a key'].join('\n');
+  }
+  if(__n==='this bridge was built one hundred years ago'){
+    return ['S=This bridge','V=was built','O(物)=—','C=—','M=one hundred years ago'].join('\n');
+  }
+  if(__n==='this bridge was built a long time ago'){
+    return ['S=This bridge','V=was built','O(物)=—','C=—','M=a long time ago'].join('\n');
+  }
+  if(__n==='the picture was taken with a smartphone'){
+    return ['S=The picture','V=was taken','O(物)=—','C=—','M=with a smartphone'].join('\n');
+  }
+  if(__n==='the photo was taken with a smartphone'){
+    return ['S=The photo','V=was taken','O(物)=—','C=—','M=with a smartphone'].join('\n');
+  }
+  if(__n==='he was helped by many people'){
+    return ['S=He','V=was helped','O(物)=—','C=—','M=by many people'].join('\n');
+  }
+  if(__n==='he was supported by many people'){
+    return ['S=He','V=was supported','O(物)=—','C=—','M=by many people'].join('\n');
+  }
+
+  // Emphasis: split focus(C) and that/who-clause (M)
+  if(__n==='it was tom that i met yesterday'){
+    return ['S=It','V=was','O(物)=—','C=Tom','M=that I met yesterday'].join('\n');
+  }
+  if(__n==='it was tom who i met yesterday'){
+    return ['S=It','V=was','O(物)=—','C=Tom','M=who I met yesterday'].join('\n');
+  }
+  if(__n==='it was at the station that i met him'){
+    return ['S=It','V=was','O(物)=—','C=at the station','M=that I met him'].join('\n');
+  }
+  if(__n==='it was at the station that i saw him'){
+    return ['S=It','V=was','O(物)=—','C=at the station','M=that I saw him'].join('\n');
+  }
+  if(__n==='it was because he worked hard that he succeeded'){
+    return ['S=It','V=was','O(物)=—','C=because he worked hard','M=that he succeeded'].join('\n');
+  }
+  if(__n==='it was because he studied hard that he succeeded'){
+    return ['S=It','V=was','O(物)=—','C=because he studied hard','M=that he succeeded'].join('\n');
+  }
+  if(__n==='it is tomorrow that we will leave'){
+    return ['S=It','V=is','O(物)=—','C=tomorrow','M=that we will leave'].join('\n');
+  }
+  if(__n==='it is tomorrow that we leave'){
+    return ['S=It','V=is','O(物)=—','C=tomorrow','M=that we leave'].join('\n');
+  }
+  if(__n==='it is the teacher that i am talking to'){
+    return ['S=It','V=is','O(物)=—','C=the teacher','M=that I am talking to'].join('\n');
+  }
+  if(__n==='it is the teacher who i am talking to'){
+    return ['S=It','V=is','O(物)=—','C=the teacher','M=who I am talking to'].join('\n');
+  }
+  if(__n==='it is your name that i want to know'){
+    return ['S=It','V=is','O(物)=—','C=your name','M=that I want to know'].join('\n');
+  }
+  if(__n==='it is your name that i would like to know'){
+    return ['S=It','V=is','O(物)=—','C=your name','M=that I would like to know'].join('\n');
+  }
+  if(__n==='it is summer that i like the best'){
+    return ['S=It','V=is','O(物)=—','C=summer','M=that I like the best'].join('\n');
+  }
+  if(__n==='it is summer that i like most'){
+    return ['S=It','V=is','O(物)=—','C=summer','M=that I like most'].join('\n');
+  }
+
+  // Participle / clauses where HINT1 was wrong
+  if(__n==='tired i went to bed early'){
+    return ['S=I','V=went','O(物)=—','C=—','M=Tired / to bed / early'].join('\n');
+  }
+  if(__n==='because i was tired i went to bed early'){
+    return ['S=I','V=went','O(物)=—','C=—','M=Because I was tired / to bed / early'].join('\n');
+  }
+  if(__n==='opening the window i let in fresh air'){
+    return ['S=I','V=let in','O(物)=fresh air','C=—','M=Opening the window'].join('\n');
+  }
+  if(__n==='i opened the window and let in fresh air'){
+    return ['S=I','V=let in','O(物)=fresh air','C=—','M=opened the window'].join('\n');
+  }
+  if(__n==='waiting for the bus i listened to music'){
+    return ['S=I','V=listened to','O(物)=music','C=—','M=Waiting for the bus'].join('\n');
+  }
+  if(__n==='while i was waiting for the bus i listened to music'){
+    return ['S=I','V=listened to','O(物)=music','C=—','M=While I was waiting for the bus'].join('\n');
+  }
+
+  // Q131 (because-clause): show main clause as S=we / V=stayed; because-clause as M
+  if(__n==='because it was raining we stayed home') {
+    return ['S=we','V=stayed','O(物)=—','C=—','M=Because it was raining / home'].join('\n');
+  }
+var ex = extractLeadingIntro(raw||'');
   var lead = ex.m;
   var body = ex.rest || '';
   var coreTokens = tokenize(body);
@@ -766,8 +1065,6 @@ function buildHintSVM(raw){
   if(!M_sv) M_sv='—';
   return ['S='+S_sv,'V='+V_sv,'O(物)=—','C=—','M='+M_sv].join('\n');
 }
-
-
 function _svfix_fixQuestionHintMap(map, body, patGuess, lead){
   try{
     var toks = tokenize(body||'');
@@ -867,6 +1164,15 @@ function _svfix_fixQuestionHintMap(map, body, patGuess, lead){
 }
 
 function buildHintWithM(raw, patGuess, verb, it){
+  // SVFIX_Q131_EARLY_RETURN: fix HINT1 for 'Because it was raining, we stayed home.'
+  function __svfix_normSent_local(s){
+    return String(s||'').replace(/,/g,'').replace(/\s+/g,' ').trim().replace(/[.?!]+$/,'').toLowerCase();
+  }
+  var __svfix_n = __svfix_normSent_local(raw);
+  if(__svfix_n==='because it was raining we stayed home'){
+    return ['S=we','V=stayed','O(物)=—','C=—','M=Because it was raining / home'].join('\n');
+  }
+
   function _svfix_normSent(s){
     return String(s||'').replace(/,/g,'').replace(/\s+/g,' ').trim().replace(/[.?!]+$/,'').toLowerCase();
   }
@@ -1064,7 +1370,14 @@ function showHint(){
 
   if(hintLevel===1){
     // HINT1: structure only (do NOT show correct pattern)
-    var msg='HINT 1（S/V/O/C/M）:\n'+buildHintWithM(tgt, String(it.pattern||''), inf2?inf2.verb:'', it);
+    // SVFIX: safe HINT1 (try/catch)
+    var _h1='';
+    try{ _h1 = buildHintWithM(tgt, String(it.pattern||''), inf2?inf2.verb:'', it); }
+    catch(e){
+      try{ _h1 = buildHintSVOC(tgt, String(it.pattern||''), inf2?inf2.verb:''); }
+      catch(e2){ _h1 = 'S=—\nV=—\nO(物)=—\nC=—\nM=—'; }
+    }
+    var msg='HINT 1（S/V/O/C/M）:\n'+_h1;
     els.statusMsg.textContent=msg;
     els.explain.classList.remove('show');
   } else if(hintLevel===2){
@@ -1074,6 +1387,21 @@ function showHint(){
   } else {
     // HINT3:
   var allArr=(it.targets&&it.targets.length)? it.targets : [];
+
+  // SVFIX: HINT3 per-sentence labels when flagged (Q81–100)
+  if(it && it._svfix_useInferPattern && allArr && allArr.length){
+    var partsFix=[];
+    for(var kk=0;kk<allArr.length;kk++){
+      var sFix=String(allArr[kk]||'');
+      var infFix=inferPatternFromSentence(sFix);
+      var gFix=(infFix&&infFix.guess)? infFix.guess : String(it.pattern||'');
+      partsFix.push(sFix+' ：'+patternLabel(gFix));
+    }
+    els.statusMsg.textContent='HINT 3（正解例まとめ）: '+partsFix.join(' / ');
+    els.explain.classList.remove('show');
+    return;
+  }
+
   var isAlt = (typeof _svfix_isDativeAltSet==='function') ? _svfix_isDativeAltSet(allArr) : false;
 
   // Only label per-sentence patterns for true dative alternation (to/for form present)
@@ -1129,7 +1457,11 @@ function checkAnswer(){els.explain.classList.remove('show');var it=pool[idx];if(
       if(it.pattern==='3' && dt.kind==='SVOO') correctPattern='4';
     }
   }
-  var patternOk=(userPattern===correctPattern);if(sentenceOk&&patternOk){setStatus(true,'✅ 正解！','英文・5文型が一致。');markAllGood();els.patternWrap.classList.add('good');if(it&&it.allowAltInA)showAltGuideIfNeeded(it,userRaw);return;}if(sentenceOk&&!patternOk){markAllGood();els.patternWrap.classList.add('bad');setStatus(false,'英文はOK。文型が違う。','HINTで S/V/O/C を確認しよう。');els.explain.classList.remove('show');return;}var userTokens=tokenize(userRaw);var best=bestTargetMatch(userTokens,(false)?targets:[targets[0]]);if(best)highlightByComparison(userTokens,best.targetTokens);setStatus(false,'❌ 不正解。英文を直そう。','前置詞・語順を確認。');if(best){var diff=prepositionDiff(userTokens,best.targetTokens);if(diff&&(diff.t||diff.kind==='drop')){var expected=(diff.kind==='drop')?'':diff.t;var chosen=isPrep(diff.u)?diff.u:'';els.expTitle.textContent='前置詞解説：'+(expected||'(前置詞なし)');els.expDiff.textContent='あなた：'+userRaw+' / 参考解：'+best.target;els.expBody.innerHTML=buildPrepositionExplanation(expected,chosen);els.explain.classList.add('show');return;}}els.expTitle.textContent='ヒント（正解例）';els.expDiff.textContent='例：'+targets[0];if(it&&it.aGuide){  var why=(it.aGuide.why||''); var tip=(it.aGuide.tip||'');  els.expBody.innerHTML= why + (tip?('<br><br><b>Tip</b>: '+tip):'');}else{  els.expBody.innerHTML='語順と前置詞を確認してください。';}els.explain.classList.add('show');}
+    // SVFIX: use inferred pattern when flagged (Q81–100)
+  if(sentenceOk && it && it._svfix_useInferPattern && infP && infP.guess){
+    correctPattern = infP.guess;
+  }
+var patternOk=(userPattern===correctPattern);if(sentenceOk&&patternOk){setStatus(true,'✅ 正解！','英文・5文型が一致。');markAllGood();els.patternWrap.classList.add('good');if(it&&it.allowAltInA)showAltGuideIfNeeded(it,userRaw);return;}if(sentenceOk&&!patternOk){markAllGood();els.patternWrap.classList.add('bad');setStatus(false,'英文はOK。文型が違う。','HINTで S/V/O/C を確認しよう。');els.explain.classList.remove('show');return;}var userTokens=tokenize(userRaw);var best=bestTargetMatch(userTokens,(false)?targets:[targets[0]]);if(best)highlightByComparison(userTokens,best.targetTokens);setStatus(false,'❌ 不正解。英文を直そう。','前置詞・語順を確認。');if(best){var diff=prepositionDiff(userTokens,best.targetTokens);if(diff&&(diff.t||diff.kind==='drop')){var expected=(diff.kind==='drop')?'':diff.t;var chosen=isPrep(diff.u)?diff.u:'';els.expTitle.textContent='前置詞解説：'+(expected||'(前置詞なし)');els.expDiff.textContent='あなた：'+userRaw+' / 参考解：'+best.target;els.expBody.innerHTML=buildPrepositionExplanation(expected,chosen);els.explain.classList.add('show');return;}}els.expTitle.textContent='ヒント（正解例）';els.expDiff.textContent='例：'+targets[0];if(it&&it.aGuide){  var why=(it.aGuide.why||''); var tip=(it.aGuide.tip||'');  els.expBody.innerHTML= why + (tip?('<br><br><b>Tip</b>: '+tip):'');}else{  els.expBody.innerHTML='語順と前置詞を確認してください。';}els.explain.classList.add('show');}
 els.gradeSel.addEventListener('change',function(e){grade=e.target.value;rebuildPool();});
 els.skillSel.addEventListener('change',function(e){skill=e.target.value;rebuildPool();});
 els.btnCheck.addEventListener('click',checkAnswer);els.btnHint.addEventListener('click',showHint);els.btnClear.addEventListener('click',clearAll);els.btnBack.addEventListener('click',prevItem);els.btnNext.addEventListener('click',nextItem);
