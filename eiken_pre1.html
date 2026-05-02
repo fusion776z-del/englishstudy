@@ -2,7 +2,7 @@
 <html lang="ja"><head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>Idiom Forge — Sentence Builder (Eiken Pre-1 / GRADEPre1)</title>
+<title>Idiom Forge — Sentence Builder (Eiken Pre-1 / GRADEPre1) [HINTSTYLE-G3+PREPSFIX]</title>
 <style>
 :root{--bg1:#050611;--bg2:#0c1330;--ink:#eaf2ff;--muted:rgba(234,242,255,.72);--glass:rgba(9,12,24,.74);--warn:#ff5a7a;--gold:#ffd86b;--ok:#7cffc5;--btnIdle:.32;--btnTouch:.14;--fade:120ms;}
 *{box-sizing:border-box}html,body{height:100%}
@@ -670,6 +670,15 @@ function buildHintSVOC(raw, patGuess, verb){
 
 
 // === PATCH: Strict O1/O2 for SVOO⇄SVO(to/for) rescue items (allowAltInA=true) ===
+
+
+
+
+/* === HINT STYLE PORTED FROM GRADE3 (incl. _preps) === */
+function _preps(){
+  return {in:1,on:1,at:1,by:1,for:1,with:1,from:1,to:1,of:1,about:1,after:1,before:1,during:1,until:1,into:1,onto:1,over:1,under:1,between:1,among:1,around:1,across:1,through:1,within:1,without:1,along:1,near:1,beside:1,behind:1,beyond:1,against:1,throughout:1};
+}
+
 function parseDative(tokens){
   var endPunc={'.':1,'?':1,'!':1,',':1,':':1,';':1};
   var core=[];
@@ -677,16 +686,57 @@ function parseDative(tokens){
     var t=tokens[i];
     if(!endPunc[t]) core.push(t);
   }
-  var preps={'to':1,'for':1};
+  if(core.length<3) return null;
+
+  // --- identify S (subject) and V (main verb) (handle simple auxiliaries) ---
   var S=core[0]||'';
   var V=core[1]||'';
-  var afterV=core.slice(2);
+  var vIndex=1;
+  var aux={will:1,can:1,must:1,should:1,may:1,might:1,have:1,has:1,had:1,"'ll":1,"'ve":1,"'d":1};
+  var vlow=(V||'').toLowerCase();
+  if(aux[vlow] && core.length>=4){ V=core[2]; vIndex=2; }
 
-  // SVO: 物 + to/for + 人
+  var afterV=core.slice(vIndex+1);
+  if(afterV.length<2) return null;
+
+  var objPron={'me':1,'him':1,'her':1,'us':1,'them':1,'you':1};
+  var poss={'my':1,'your':1,'his':1,'her':1,'our':1,'their':1};
+  var human={'mother':1,'father':1,'mom':1,'dad':1,'parents':1,'parent':1,'sister':1,'brother':1,'friend':1,'teacher':1,'student':1,'kids':1,'kid':1,'child':1,'children':1,'grandmother':1,'grandfather':1,'aunt':1,'uncle':1,'cousin':1};
+  function isPersonStart(idx){
+    var w=(afterV[idx]||'');
+    var low=w.toLowerCase();
+    if(objPron[low]) return true;
+    if(/^[A-Z]/.test(w)) return true;
+    if(poss[low]){
+      var next=(afterV[idx+1]||'').toLowerCase();
+      if(human[next]) return true;
+    }
+    return false;
+  }
+
+  // --- SVOO: 人 → 物  (最優先: 後ろに to/for があっても、まず語順で判定) ---
+  if(isPersonStart(0)){
+    var o1Len=1;
+    var firstLow=(afterV[0]||'').toLowerCase();
+    if(poss[firstLow] && human[(afterV[1]||'').toLowerCase()]) o1Len=2;
+    var O1=afterV.slice(0,o1Len).join(' ');
+    var O2=afterV.slice(o1Len).join(' ');
+    if(O2){ return {kind:'SVOO', S:S, V:V, O1:O1, O2:O2}; }
+  }
+
+  // --- SVO (物 → to/for → 人) ---
+  var preps={'to':1,'for':1};
   var prepPos=-1;
-  for(var j=0;j<afterV.length;j++){
+  // 受け手を導く to/for を探す: 「to/for の直後が人っぽい」ものを優先し、最後の候補を採用
+  for(var j=0;j<afterV.length-1;j++){
     var w=(afterV[j]||'').toLowerCase();
-    if(preps[w]){ prepPos=j; break; }
+    if(!preps[w]) continue;
+    // skip infinitive "to" (to + VERB) っぽいものは除外（簡易）
+    var next=(afterV[j+1]||'');
+    var nextLow=next.toLowerCase();
+    var looksInf = (w==='to') && (!isPersonStart(j+1)) && (/^[a-z]+$/.test(nextLow)) && (!objPron[nextLow]) && (!poss[nextLow]);
+    if(looksInf) continue;
+    if(isPersonStart(j+1)) prepPos=j;
   }
   if(prepPos!==-1){
     var O=afterV.slice(0, prepPos);
@@ -697,19 +747,307 @@ function parseDative(tokens){
     }
   }
 
-  // SVOO: 人 + 物
-  var objPron={'me':1,'him':1,'her':1,'us':1,'them':1,'you':1};
-  if(afterV.length>=2){
-    var first=afterV[0];
-    var firstLow=(first||'').toLowerCase();
-    var looksPerson=!!objPron[firstLow] || (/^[A-Z]/.test(first));
-    if(looksPerson){
-      var O1=first;
-      var O2=afterV.slice(1).join(' ');
-      if(O2){ return {kind:'SVOO', S:S, V:V, O1:O1, O2:O2}; }
+  return null;
+}
+
+function _svfix_labelForAlt(sentence, fallbackPattern){
+  var dt=parseDative(tokenize(String(sentence||'')));
+  if(dt && dt.kind==='SVOO') return '4';
+  if(dt && dt.kind==='SVO_PREP') return '3';
+  var fb=String(fallbackPattern||'');
+  if(fb==='3' || fb==='4') return fb;
+  return '4';
+}
+
+function _hintToMap(hintText){
+  var lines = String(hintText||'').split(/\n/);
+  var map = {S:'—',V:'—',O:'—',C:'—',M:'—'};
+  for(var i=0;i<lines.length;i++){
+    var ln = lines[i];
+    if(!ln) continue;
+    var m;
+    if((m=/^S\s*=\s*(.*)$/.exec(ln))) map.S = (m[1]||'—');
+    else if((m=/^V\s*=\s*(.*)$/.exec(ln))) map.V = (m[1]||'—');
+    else if((m=/^O\(.*?\)\s*=\s*(.*)$/.exec(ln))) map.O = (m[1]||'—');
+    else if((m=/^O\s*=\s*(.*)$/.exec(ln))) map.O = (m[1]||'—');
+    else if((m=/^C\s*=\s*(.*)$/.exec(ln))) map.C = (m[1]||'—');
+    else if((m=/^M\s*=\s*(.*)$/.exec(ln))) map.M = (m[1]||'—');
+  }
+  return map;
+}
+
+function _mapToHint(map){
+  return ['S='+map.S,'V='+map.V,'O(物)='+map.O,'C='+map.C,'M='+map.M].join('\n');
+}
+
+function extractLeadingIntro(raw){
+  var toks = tokenize(raw||'');
+  if(!toks || !toks.length) return {m:'', rest: raw||''};
+  var comma=-1;
+  for(var i=0;i<toks.length;i++){ if(toks[i]===','){ comma=i; break; } }
+  if(comma<=0) return {m:'', rest: raw||''};
+
+  var first = toks[0]||'';
+  var firstLow = first.toLowerCase();
+
+  var startsPart = false;
+  if(/ing$/.test(firstLow)) startsPart = true;
+  if(/ed$/.test(firstLow) || /en$/.test(firstLow)) startsPart = true;
+  var partStarters = {having:1, being:1, given:1, looking:1, considering:1, facing:1, resisting:1, surrounded:1, confronted:1};
+  if(partStarters[firstLow]) startsPart = true;
+
+  var clauseStarters = {when:1, if:1, because:1, although:1, though:1, while:1, as:1, since:1, before:1, after:1, until:1, once:1, unless:1, whereas:1, whenever:1, wherever:1};
+  var startsClause = !!clauseStarters[firstLow];
+
+  var prepStarters = {in:1,on:1,at:1,by:1,for:1,with:1,from:1,to:1,of:1,about:1,into:1,onto:1,over:1,under:1,between:1,among:1,around:1,across:1,through:1,throughout:1,within:1,without:1,along:1,near:1,beside:1,behind:1,beyond:1,against:1,after:1,before:1,during:1,until:1,regarding:1,concerning:1,despite:1,via:1};
+  var startsPrep = !!prepStarters[firstLow];
+
+  var startsInf = (firstLow==='to');
+  var startsFallback = _isLikelySubjectToken(toks[comma+1]||'');
+
+  if(!startsPart && !startsClause && !startsPrep && !startsInf && !startsFallback) return {m:'', rest: raw||''};
+
+  var mTokens = toks.slice(0, comma+1);
+  var restTokens = toks.slice(comma+1);
+  var m = _detok(mTokens).replace(/\s*,$/,'').trim();
+  var rest = _detok(restTokens).trim();
+  return {m:m, rest:rest};
+}
+
+function _simpleObjectForSVO(raw){
+  var toks = tokenize(raw||'');
+  var endPunc={'.':1,'?':1,'!':1,',':1,':':1,';':1};
+  var core=[];
+  for(var i=0;i<toks.length;i++) if(!endPunc[toks[i]]) core.push(toks[i]);
+  if(core.length<3) return {obj:'', tail:''};
+  var rest = core.slice(2);
+  var preps=_preps();
+  var objTokens=[];
+  var tailTokens=[];
+  for(var j=0;j<rest.length;j++){
+    var w=(rest[j]||'').toLowerCase();
+    if(preps[w]){ tailTokens = rest.slice(j); break; }
+    objTokens.push(rest[j]);
+  }
+  return {obj:objTokens.join(' ').trim(), tail:tailTokens.join(' ').trim()};
+}
+
+function _splitObjectTrailingPP(objStr){
+  var toks = tokenize(objStr||'');
+  var endPunc={'.':1,'?':1,'!':1,',':1,':':1,';':1};
+  var core=[];
+  for(var i=0;i<toks.length;i++) if(!endPunc[toks[i]]) core.push(toks[i]);
+  if(core.length<2) return {obj: objStr||'', tail:''};
+  var preps=_preps();
+  for(var j=1;j<core.length;j++){
+    var w=(core[j]||'').toLowerCase();
+    if(preps[w]){
+      return {obj: core.slice(0,j).join(' ').trim(), tail: core.slice(j).join(' ').trim()};
     }
   }
-  return null;
+  return {obj: objStr||'', tail:''};
+}
+
+function _svfix_fixQuestionHintMap(map, body, patGuess, lead){
+  try{
+    var toks = tokenize(body||'');
+    // drop trailing punctuation
+    while(toks.length && !isWord(toks[toks.length-1])) toks.pop();
+    if(toks.length<3) return map;
+
+    var wh={what:1,who:1,when:1,where:1,why:1,how:1,which:1};
+    var auxDo={do:1,does:1,did:1};
+    var auxBe={am:1,is:1,are:1,was:1,were:1};
+    var auxModal={can:1,will:1,shall:1,may:1,might:1,must:1,should:1,could:1,would:1};
+    var auxHave={have:1,has:1,had:1};
+    function isAux(w){ return !!(auxDo[w]||auxBe[w]||auxModal[w]||auxHave[w]); }
+
+    var det={a:1,an:1,the:1,this:1,that:1,these:1,those:1,my:1,your:1,his:1,her:1,our:1,their:1,some:1,any:1};
+    function join(a){return (a&&a.length)? a.join(' '):'';}
+
+    var w0=lower(toks[0]||'');
+    var whLead='';
+    var auxTok='';
+    var start=0;
+
+    if(wh[w0] && toks.length>=4 && isAux(lower(toks[1]||''))){
+      whLead = toks[0];
+      auxTok = toks[1];
+      start = 2;
+    } else if(isAux(w0)){
+      auxTok = toks[0];
+      start = 1;
+    } else {
+      return map;
+    }
+
+    var auxLow = lower(auxTok||'');
+    var subjEnd = start+1;
+    // allow 2-token subject like "your brother" / "the movie"
+    if(subjEnd < toks.length && det[lower(toks[start]||'')] && isWord(toks[subjEnd])) subjEnd = start+2;
+
+    // --- DO/MODAL/HAVE question: Aux + S + V + ... ---
+    if(auxDo[auxLow] || auxModal[auxLow] || auxHave[auxLow]){
+      if(subjEnd>=toks.length) return map;
+      var vIndex = subjEnd;
+      if(vIndex>=toks.length) return map;
+      var S = join(toks.slice(start, subjEnd));
+      var V = toks[vIndex]||'';
+      var rest = toks.slice(vIndex+1);
+
+      map.S = S || map.S;
+      map.V = V || map.V;
+      if(String(patGuess||'')==='2'){
+        map.C = join(rest) || map.C;
+      } else {
+        map.O = join(rest) || map.O;
+      }
+
+      // M: wh + aux, plus intro lead
+      var mParts=[];
+      if(lead) mParts.push(lead);
+      if(whLead) mParts.push(whLead+' '+auxTok);
+      else mParts.push(auxTok);
+      // preserve existing M if meaningful and not duplicate
+      if(map.M && map.M!=='—'){
+        var cur=String(map.M);
+        var merged=mParts.join(' / ');
+        if(cur.indexOf(auxTok)===-1 && cur.indexOf(merged)===-1) mParts.push(cur);
+      }
+      map.M = mParts.filter(function(x){return x && x!=='—';}).join(' / ') || '—';
+      return map;
+    }
+
+    // --- BE question: V=be, S after it ---
+    if(auxBe[auxLow]){
+      if(subjEnd>toks.length) return map;
+      var S2 = join(toks.slice(start, subjEnd));
+      var rest2 = toks.slice(subjEnd);
+      map.S = S2 || map.S;
+      map.V = auxTok || map.V;
+      if(String(patGuess||'')==='2') map.C = join(rest2) || map.C;
+      else map.O = join(rest2) || map.O;
+
+      var mParts2=[];
+      if(lead) mParts2.push(lead);
+      if(whLead) mParts2.push(whLead);
+      if(map.M && map.M!=='—'){
+        var cur2=String(map.M);
+        if(whLead && cur2.indexOf(whLead)===-1) mParts2.push(cur2);
+        if(!whLead && lead && cur2.indexOf(lead)===-1) mParts2.push(cur2);
+      }
+      map.M = mParts2.filter(function(x){return x && x!=='—';}).join(' / ') || '—';
+      return map;
+    }
+
+    return map;
+  } catch(e){
+    return map;
+  }
+}
+
+function buildHintSVM(raw){
+  var ex = extractLeadingIntro(raw||'');
+  var lead = ex.m;
+  var body = ex.rest || '';
+  var coreTokens = tokenize(body);
+  var endPunc={'.':1,'?':1,'!':1,',':1,':':1,';':1};
+  var core=[];
+  for(var ii=0;ii<coreTokens.length;ii++) if(!endPunc[coreTokens[ii]]) core.push(coreTokens[ii]);
+  var S_sv = core[0]||'—';
+  var V_sv = core[1]||'—';
+  var tail = core.slice(2).join(' ')||'';
+  var M_sv = (lead? lead : '');
+  if(tail) M_sv = (M_sv? (M_sv+' / '+tail) : tail);
+  if(!M_sv) M_sv='—';
+  return ['S='+S_sv,'V='+V_sv,'O(物)=—','C=—','M='+M_sv].join('\n');
+}
+
+function buildHintWithM(raw, patGuess, verb, it){
+  var ex = extractLeadingIntro(raw||'');
+  var lead = ex.m;
+  var body = ex.rest || (raw||'');
+  if(String(patGuess||'')==='1') return buildHintSVM(raw);
+
+  var base = (typeof buildHintSVOC_Dative==='function') ? buildHintSVOC_Dative(body, patGuess, verb, it) : buildHintSVOC(body, patGuess, verb);
+  var map = _hintToMap(base);
+
+  // SVO recovery if O missing
+  if(String(patGuess||'')==='3' && (!map.O || map.O==='—')){
+    var rec = _simpleObjectForSVO(body);
+    if(rec.obj){
+      map.O = rec.obj;
+      if(rec.tail){
+        map.M = (lead? lead : '');
+        map.M = (map.M? (map.M+' / '+rec.tail) : rec.tail);
+      }
+    }
+  }
+
+  // SVO cleanup: if O contains trailing PP like "him at the station", split PP into M
+  if(String(patGuess||'')==='3' && map.O && map.O!=='—'){
+    var sp = _splitObjectTrailingPP(map.O);
+    if(sp.tail){
+      map.O = sp.obj || map.O;
+      var m2 = (lead? lead : '');
+      if(map.M && map.M!=='—') m2 = (m2? (m2+' / '+map.M) : map.M);
+      m2 = (m2? (m2+' / '+sp.tail) : sp.tail);
+      map.M = m2 || '—';
+    }
+  }
+
+  // Apply intro M if still empty
+  if(lead){
+    if(!map.M || map.M==='—') map.M = lead;
+    else if(map.M.indexOf(lead)===-1) map.M = lead + ' / ' + map.M;
+  }
+
+  // Fix yes/no & WH questions: move auxiliary into M and normalize S/V order
+  map = _svfix_fixQuestionHintMap(map, body, patGuess, lead);
+
+  map.S = map.S||'—'; map.V = map.V||'—'; map.O = map.O||'—'; map.C = map.C||'—'; map.M = map.M||'—';
+  return _mapToHint(map);
+}
+
+function showHint(){
+  var it=pool[idx];if(!it)return;
+  hintLevel=Math.min(3,hintLevel+1);
+
+  var tgt=(it.targets&&it.targets.length)? it.targets[0] : '';
+  var inf2=(tgt&&tgt.replace(/\s/g,'').length)? inferPatternFromSentence(tgt) : null;
+
+  if(hintLevel===1){
+    // HINT1: structure only (do NOT show correct pattern)
+    var msg='HINT 1（S/V/O/C/M）:\n'+buildHintWithM(tgt, String(it.pattern||''), inf2?inf2.verb:'', it);
+    els.statusMsg.textContent=msg;
+    els.explain.classList.remove('show');
+  } else if(hintLevel===2){
+    // HINT2: full answer sentence
+    els.statusMsg.textContent='HINT 2（正解）: '+tgt;
+    els.explain.classList.remove('show');
+  } else {
+    // HINT3:
+  var allArr=(it.targets&&it.targets.length)? it.targets : [];
+  var hasToFor=false;
+  for(var kk=0;kk<allArr.length;kk++){ if(/\b(to|for)\b/i.test(String(allArr[kk]||''))){ hasToFor=true; break; } }
+
+  // Only label per-sentence patterns for true dative alternation (to/for form present)
+  if(it && it.allowAltInA && hasToFor && allArr.length>=2){
+    var parts=[];
+    for(var k=0;k<allArr.length;k++){
+      var s=allArr[k];
+      var pat=_svfix_labelForAlt(s, it.pattern);
+      parts.push(s+' ：'+patternLabel(pat));
+    }
+    els.statusMsg.textContent='HINT 3（正解例まとめ）: '+parts.join(' / ');
+  } else {
+    var all=(allArr.length)? allArr.join(' / ') : '';
+    var msg3='HINT 3（正解例まとめ）: '+all;
+    msg3+='\n正解の文型：'+patternLabel(it.pattern);
+    els.statusMsg.textContent=msg3;
+  }
+  els.explain.classList.remove('show');
+}
 }
 
 function buildHintSVOC_Dative(raw, pat, verb, it){
@@ -724,39 +1062,7 @@ function buildHintSVOC_Dative(raw, pat, verb, it){
   }
   return buildHintSVOC(raw, pat, verb);
 }
-function showHint(){
-  var it=pool[idx];if(!it)return;
-  hintLevel=Math.min(3,hintLevel+1);
-  var raw=currentSentence();
-  var inf=(raw&&raw.replace(/\s/g,'').length)? inferPatternFromSentence(raw) : null;
-  var patGuess=(inf&&inf.guess)? String(inf.guess) : String(it.pattern||'');
 
-
-
-// Strict guess for dative alternation items (allowAltInA)
-if(it && it.allowAltInA && raw && raw.replace(/\s/g,'').length){
-  var dt=parseDative(tokenize(raw));
-  if(dt && dt.kind==='SVOO') patGuess='4';
-  if(dt && dt.kind==='SVO_PREP') patGuess='3';
-}
-  if(hintLevel===1){
-    var msg='HINT 1（S/V/O/C）:\n'+buildHintSVOC_Dative(raw, patGuess, inf?inf.verb:'', it);
-    if(inf){ msg+='\n推定文型：'+patternLabel(patGuess)+'（V候補='+inf.verb+'）'; }
-    els.statusMsg.textContent=msg;
-    els.explain.classList.remove('show');
-  } else if(hintLevel===2){
-    var tgt=(it.targets&&it.targets.length)? it.targets[0] : '';
-    var inf2=(tgt&&tgt.replace(/\s/g,'').length)? inferPatternFromSentence(tgt) : null;
-    var msg2='HINT 2（正解例のS/V/O/C）:\n'+tgt+'\n'+buildHintSVOC_Dative(tgt, String(it.pattern||''), inf2?inf2.verb:'', it);
-    msg2+='\n正解の文型：'+patternLabel(it.pattern);
-    els.statusMsg.textContent=msg2;
-    els.explain.classList.remove('show');
-  } else {
-    var tgt2=(it.targets&&it.targets.length)? it.targets[0] : '';
-    els.statusMsg.textContent='HINT 3（答え）: '+tgt2;
-    els.explain.classList.remove('show');
-  }
-}
 
 function clearAll(){bankTokens=bankTokens.concat(slotTokens);slotTokens=[];renderTokens();els.explain.classList.remove('show');els.statusMsg.textContent='クリアしました。';}
 function showAltGuideIfNeeded(it,userRaw){
