@@ -376,21 +376,54 @@ function findToForAfter(tokens, start){
 function inferPatternFromSentence(raw){
   var tokens=tokenize(raw);
   while(tokens.length && !isWord(tokens[tokens.length-1])) tokens.pop();
-  var verb=pickVerb(tokens.slice(1));
-  if(!verb) verb=pickVerb(tokens);
+  if(tokens.length<2) return {guess:'1',verb:'',why:'短すぎ'};
 
-  var link={'am':1,'is':1,'are':1,'was':1,'were':1,'be':1,'become':1,'became':1,'seem':1,'seems':1,'look':1,'looks':1,'feel':1,'feels':1,'remain':1,'remains':1,'stay':1,'stays':1,'sound':1,'sounds':1,'taste':1,'tastes':1,'smell':1,'smells':1,'appear':1,'appears':1,'get':1,'got':1,'turn':1,'turned':1,'grow':1,'grew':1};
-  var ditrans={'give':1,'gave':1,'send':1,'sent':1,'show':1,'showed':1,'teach':1,'taught':1,'tell':1,'told':1,'lend':1,'lent':1,'buy':1,'bought':1,'make':1,'made':1,'cook':1,'cooked':1,'get':1,'got':1,'find':1,'found':1,'offer':1,'offered':1,'bring':1,'brought':1,'write':1,'wrote':1};
-  var svoc={'make':1,'made':1,'call':1,'called':1,'name':1,'named':1,'keep':1,'kept':1,'find':1,'found':1,'consider':1,'considered':1,'elect':1,'elected':1,'leave':1,'left':1};
+  // Robust verb index: prefer finite verb-like token; avoid DET + -ing noun trap when next is finite
+  var DET={a:1,an:1,the:1,this:1,that:1,these:1,those:1,my:1,your:1,his:1,her:1,our:1,their:1,some:1,any:1,no:1,each:1,every:1};
+  var AUX={am:1,is:1,are:1,was:1,were:1,be:1,been:1,being:1,do:1,does:1,did:1,have:1,has:1,had:1,can:1,will:1,shall:1,may:1,might:1,must:1,should:1,could:1,would:1};
+  function isFiniteVerbLike(tok){
+    var w=lower(tok||'');
+    if(!w) return false;
+    if(AUX[w]) return true;
+    if(/^[a-z]+(s|es|ied)$/.test(w)) return true;
+    if(/^[a-z]+ed$/.test(w)) return true;
+    var irr={went:1,came:1,saw:1,made:1,gave:1,took:1,found:1,kept:1,told:1,sent:1,taught:1,became:1,began:1,left:1,felt:1,got:1,knew:1,thought:1,said:1,held:1,brought:1,wrote:1,read:1,spoke:1,drove:1,ran:1,built:1,chose:1,ate:1,drank:1,slept:1,met:1,fell:1,grew:1};
+    return !!irr[w];
+  }
+  function pickVerbIndexRobust(toks){
+    for(var i=1;i<toks.length;i++){
+      var w=lower(toks[i]||'');
+      if(/ing$/.test(w) && DET[lower(toks[i-1]||'')] && i+1<toks.length && isFiniteVerbLike(toks[i+1])) continue;
+      if(isFiniteVerbLike(toks[i])) return i;
+    }
+    var v=pickVerb(toks.slice(1));
+    if(!v) v=pickVerb(toks);
+    if(v){
+      var lv=lower(v);
+      for(var j=0;j<toks.length;j++){ if(lower(toks[j])===lv) return j; }
+    }
+    return 1;
+  }
 
-  var vIndex=-1;
-  for(var i=0;i<tokens.length;i++){ if(lower(tokens[i])===verb){ vIndex=i; break; } }
-  if(vIndex<0) vIndex=1;
+  var vIndex = pickVerbIndexRobust(tokens);
+  var verb = lower(tokens[vIndex]||'');
   var t1=lower(tokens[vIndex+1]||'');
   var t2=lower(tokens[vIndex+2]||'');
 
-  if(link[verb]){
-    if(looksAdj(t1) || looksNounStart(t1)) return {guess:'2',verb:verb,why:'Vが状態系（be/become/look/feel等）で、後ろが説明（C）っぽい'};
+  // 상태(보어)계 동사 + 형용사(또는 보어) => SVC
+  var link={am:1,is:1,are:1,was:1,were:1,be:1,become:1,became:1,seem:1,seems:1,look:1,looks:1,feel:1,feels:1,remain:1,remains:1,stay:1,stays:1,sound:1,sounds:1,taste:1,tastes:1,smell:1,smells:1,appear:1,appears:1,get:1,got:1,turn:1,turned:1,grow:1,grew:1};
+  // NEW: 상태변화 동사(링킹처럼 쓰이는) 추가
+  var linklike={fall:1,fell:1,fallen:1,go:1,went:1};
+  // 자주 쓰는 보어 형용사(looksAdj가 약할 때 보강)
+  var compAdj={asleep:1,awake:1,alone:1,afraid:1,open:1,closed:1};
+
+  var ditrans={give:1,gave:1,send:1,sent:1,show:1,showed:1,teach:1,taught:1,tell:1,told:1,lend:1,lent:1,buy:1,bought:1,make:1,made:1,cook:1,cooked:1,get:1,got:1,find:1,found:1,offer:1,offered:1,bring:1,brought:1,write:1,wrote:1};
+  var svoc={make:1,made:1,call:1,called:1,name:1,named:1,keep:1,kept:1,find:1,found:1,consider:1,considered:1,elect:1,elected:1,leave:1,left:1};
+
+  if(link[verb] || linklike[verb]){
+    if(looksAdj(t1) || compAdj[t1] || looksNounStart(t1)){
+      return {guess:'2',verb:verb,why:'状態系/状態変化V + 보어(C)'};
+    }
   }
 
   // SVOC first
@@ -398,7 +431,7 @@ function inferPatternFromSentence(raw){
     if(looksNounStart(t1) && (looksAdj(t2) || looksNounStart(t2))) return {guess:'5',verb:verb,why:'Oの後ろに説明（C）が来ている（O=C / OがCの状態）'};
   }
 
-  // Ditransitive alternation: FIX by scanning for to/for anywhere after the object phrase
+  // Ditransitive alternation
   if(ditrans[verb]){
     var isPerson=(t1==='me'||t1==='him'||t1==='her'||t1==='us'||t1==='them'||t1==='you');
     if(isPerson) return {guess:'4',verb:verb,why:'V直後が受け手（人）なのでSVOO（人→物）'};
@@ -898,10 +931,11 @@ function showHint(){
 
   var tgt=(it.targets&&it.targets.length)? it.targets[0] : '';
   var inf2=(tgt&&tgt.replace(/\s/g,'').length)? inferPatternFromSentence(tgt) : null;
+  var basePat = (inf2 && inf2.guess) ? String(inf2.guess) : String(it.pattern||'');
 
   if(hintLevel===1){
     // HINT1: structure only (do NOT show correct pattern)
-    var msg='HINT 1（S/V/O/C/M）:\n'+buildHintWithM(tgt, String(it.pattern||''), inf2?inf2.verb:'', it);
+    var msg='HINT 1（S/V/O/C/M）:\n'+buildHintWithM(tgt, basePat, inf2?inf2.verb:'', it);
     els.statusMsg.textContent=msg;
     els.explain.classList.remove('show');
   } else if(hintLevel===2){
@@ -919,14 +953,14 @@ function showHint(){
     var parts=[];
     for(var k=0;k<allArr.length;k++){
       var s=allArr[k];
-      var pat=_svfix_labelForAlt(s, it.pattern);
+      var pat=_svfix_labelForAlt(s, basePat);
       parts.push(s+' ：'+patternLabel(pat));
     }
     els.statusMsg.textContent='HINT 3（正解例まとめ）: '+parts.join(' / ');
   } else {
     var all=(allArr.length)? allArr.join(' / ') : '';
     var msg3='HINT 3（正解例まとめ）: '+all;
-    msg3+='\n正解の文型：'+patternLabel(it.pattern);
+    msg3+='\n正解の文型：'+patternLabel(basePat);
     els.statusMsg.textContent=msg3;
   }
   els.explain.classList.remove('show');
@@ -1988,6 +2022,202 @@ try{
       var all=(allArr.length)? allArr.join(' / ') : '';
       var msg3='HINT 3（正解例まとめ）: '+all+'\n正解の文型：'+(typeof patternLabel==='function'? patternLabel(basePat):basePat);
       window.els.statusMsg.textContent=msg3;
+      window.els.explain.classList.remove('show');
+    }
+  }
+
+  function replaceHintButton(){
+    var btn=document.getElementById('btnHint');
+    if(!btn || !btn.parentNode) return;
+    var clone=btn.cloneNode(true);
+    btn.parentNode.replaceChild(clone, btn);
+    clone.addEventListener('click', newShowHint);
+  }
+
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', replaceHintButton);
+  else replaceHintButton();
+})();
+</script>
+
+
+<script>
+/* === HINT2→HINT1 SVOCM OVERRIDE v3 ===
+   Fix: modal-like 'have to' / 'will have to' should keep V as a verb phrase and let O be parsed.
+   - HINT2(sentence) -> inferPatternFromSentence -> build HINT1 by pattern
+   - Add rule-folding: HAVE/HAS/HAD + to + VB  => V = "have to VB"
+                     MODAL + have + to + VB => V = "modal have to VB"
+   Extend later by adding to RULES.MODAL_FOLDS if needed.
+*/
+(function(){
+  // -------- RULES (edit here) --------
+  var RULES = {
+    PREPS: {at:1,in:1,on:1,to:1,for:1,from:1,with:1,by:1,about:1,of:1,into:1,onto:1,over:1,under:1,after:1,before:1,between:1,among:1,during:1,without:1,against:1,around:1,because:1},
+    BE: {am:1,is:1,are:1,was:1,were:1,be:1,been:1,being:1},
+    DET: {a:1,an:1,the:1,this:1,that:1,these:1,those:1,my:1,your:1,his:1,her:1,our:1,their:1,some:1,any:1,no:1,each:1,every:1},
+    AUX: {am:1,is:1,are:1,was:1,were:1,be:1,been:1,being:1,do:1,does:1,did:1,have:1,has:1,had:1,can:1,will:1,shall:1,may:1,might:1,must:1,should:1,could:1,would:1},
+    LINKLIKE: {become:1,became:1,get:1,got:1,turn:1,turned:1,grow:1,grew:1,go:1,went:1,fall:1,fell:1,fallen:1,seem:1,seems:1,look:1,looks:1,feel:1,feels:1,remain:1,remains:1,stay:1,stays:1},
+    COMP_ADJ: {open:1,closed:1,asleep:1,awake:1,alone:1,afraid:1,ready:1,sure:1,late:1,early:1,busy:1,happy:1,sad:1,angry:1,tired:1,clean:1,important:1},
+    IRR: {went:1,came:1,saw:1,made:1,gave:1,took:1,found:1,kept:1,told:1,sent:1,taught:1,became:1,began:1,left:1,felt:1,got:1,knew:1,thought:1,said:1,held:1,brought:1,wrote:1,read:1,spoke:1,drove:1,ran:1,built:1,chose:1,ate:1,drank:1,slept:1,met:1,fell:1,grew:1},
+    // Modal fold patterns
+    HAVE: {have:1,has:1,had:1},
+    MODAL: {will:1,would:1,can:1,could:1,shall:1,should:1,may:1,might:1,must:1}
+  };
+
+  // -------- helpers --------
+  function lw(x){ return (typeof lower==='function') ? lower(x) : String(x||'').toLowerCase(); }
+  function tokenizeSafe(raw){ return (typeof tokenize==='function') ? tokenize(raw||'') : String(raw||'').trim().split(/\s+/); }
+  function trimPunc(toks){
+    if(typeof isWord!=='function') return toks;
+    while(toks.length && !isWord(toks[toks.length-1])) toks.pop();
+    return toks;
+  }
+  function join(toks){ return toks && toks.length ? toks.join(' ').trim() : ''; }
+
+  function isAdjLike(w){
+    w=lw(w);
+    if(!w) return false;
+    if(typeof looksAdj==='function' && looksAdj(w)) return true;
+    if(RULES.COMP_ADJ[w]) return true;
+    if(/(y|ful|ous|able|ible|al|ive|less|ic|ish)$/.test(w)) return true;
+    if(/ed$/.test(w)) return true;
+    return false;
+  }
+
+  function isFiniteVerbLike(tok){
+    var w=lw(tok);
+    if(!w) return false;
+    if(RULES.AUX[w]) return true;
+    if(/^[a-z]+(s|es|ied)$/.test(w)) return true;
+    if(/^[a-z]+ed$/.test(w)) return true;
+    if(RULES.IRR[w]) return true;
+    return false;
+  }
+
+  function pickVerbIndexRobust(toks){
+    for(var i=1;i<toks.length;i++){
+      var w=lw(toks[i]);
+      if(/ing$/.test(w) && RULES.DET[lw(toks[i-1])] && i+1<toks.length && isFiniteVerbLike(toks[i+1])) continue;
+      if(isFiniteVerbLike(toks[i])) return i;
+    }
+    if(typeof pickVerb==='function'){
+      var v=pickVerb(toks.slice(1)); if(!v) v=pickVerb(toks);
+      if(v){ var lv=lw(v); for(var j=0;j<toks.length;j++) if(lw(toks[j])===lv) return j; }
+    }
+    return Math.min(1, Math.max(0, toks.length-1));
+  }
+
+  function splitAtFirstPrep(toks){
+    for(var i=0;i<toks.length;i++) if(RULES.PREPS[lw(toks[i])]) return {head:toks.slice(0,i), tail:toks.slice(i)};
+    return {head:toks.slice(0), tail:[]};
+  }
+
+  function baseParse(raw){
+    var toks=trimPunc(tokenizeSafe(raw));
+    var vi=pickVerbIndexRobust(toks);
+    return {toks:toks, vi:vi, S:join(toks.slice(0,vi))||'—', V:String(toks[vi]||'—'), rest:toks.slice(vi+1)};
+  }
+
+  function repairShiftBe(p){
+    if(!isFiniteVerbLike(p.V) && p.rest.length && RULES.BE[lw(p.rest[0])]){
+      p.S = (p.S==='—' ? p.V : (p.S+' '+p.V)).trim();
+      p.V = p.rest[0];
+      p.rest = p.rest.slice(1);
+    }
+    return p;
+  }
+
+  function foldModalInf(p){
+    // have to VB
+    var v=lw(p.V);
+    if(RULES.HAVE[v] && lw(p.rest[0])==='to' && p.rest.length>=2 && /^[a-z]+$/.test(lw(p.rest[1]))){
+      p.V = p.V + ' ' + p.rest[0] + ' ' + p.rest[1];
+      p.rest = p.rest.slice(2);
+      return p;
+    }
+    // modal + have to VB
+    if(RULES.MODAL[v] && RULES.HAVE[lw(p.rest[0])] && lw(p.rest[1])==='to' && p.rest.length>=3 && /^[a-z]+$/.test(lw(p.rest[2]))){
+      p.V = p.V + ' ' + p.rest[0] + ' ' + p.rest[1] + ' ' + p.rest[2];
+      p.rest = p.rest.slice(3);
+      return p;
+    }
+    return p;
+  }
+
+  // -------- override inferPatternFromSentence (HINT2-based) --------
+  window.inferPatternFromSentence = function(raw){
+    var p=foldModalInf(repairShiftBe(baseParse(raw)));
+    var v=lw(p.V.split(/\s+/)[0]); // head verb for type checks
+    var first=lw(p.rest[0]||'');
+
+    // SVC: BE/LINKLIKE + adj
+    if(RULES.BE[v] && isAdjLike(first)) return {guess:'2',verb:v,why:'be + adj => SVC'};
+    if(RULES.LINKLIKE[v] && isAdjLike(first)) return {guess:'2',verb:v,why:'linklike + adj => SVC'};
+
+    // If we folded 'have to VB', treat as SVO by default if next is noun-like
+    if(RULES.HAVE[v] && /^to$/.test(lw((p.V.split(/\s+/)[1]||''))) ){
+      // (this branch rarely hits because we folded; keep safe)
+    }
+
+    if(typeof isPrepTok==='function' && isPrepTok(first)) return {guess:'1',verb:v,why:'V直後が前置詞 => SV'};
+    if(typeof looksNounStart==='function' && looksNounStart(first)) return {guess:'3',verb:v,why:'V直後が名詞 => SVO'};
+    if(RULES.DET[first] || /^(me|him|her|us|them|you|it)$/.test(first) || /^[a-z]+$/.test(first)) return {guess:'3',verb:v,why:'noun-like => SVO'};
+    return {guess:'1',verb:v,why:'default SV'};
+  };
+
+  // -------- HINT1 builder driven by inferred pattern --------
+  function buildHint1FromHINT2(sentence){
+    var p=foldModalInf(repairShiftBe(baseParse(sentence)));
+    var inf=window.inferPatternFromSentence(sentence);
+    var pat=String((inf&&inf.guess)||'1');
+    var headV=lw(p.V.split(/\s+/)[0]);
+    var first=lw(p.rest[0]||'');
+
+    if((RULES.BE[headV] || RULES.LINKLIKE[headV]) && isAdjLike(first)) pat='2';
+
+    if(pat==='1'){
+      var M=join(p.rest)||'—';
+      return ['S='+p.S,'V='+p.V,'O(物)=—','C=—','M='+M].join('\n');
+    }
+    if(pat==='2'){
+      var sp=splitAtFirstPrep(p.rest);
+      var C=join(sp.head)||'—';
+      var M=join(sp.tail)||'—';
+      if(C!=='—' && RULES.PREPS[lw(C.split(/\s+/)[0])]){ M=(C + (M==='—'?'':(' '+M))).trim(); C='—'; }
+      return ['S='+p.S,'V='+p.V,'O(物)=—','C='+C,'M='+M].join('\n');
+    }
+    if(pat==='3'){
+      var sp3=splitAtFirstPrep(p.rest);
+      var O=join(sp3.head)||'—';
+      var M3=join(sp3.tail)||'—';
+      return ['S='+p.S,'V='+p.V,'O(物)='+O,'C=—','M='+M3].join('\n');
+    }
+    // delegate 4/5 to existing logic if any
+    if((pat==='4' || pat==='5') && typeof buildHintWithM==='function'){
+      return buildHintWithM(sentence, pat, (inf&&inf.verb)||'', (window.pool&&window.pool[window.idx])||{});
+    }
+    var Mx=join(p.rest)||'—';
+    return ['S='+p.S,'V='+p.V,'O(物)=—','C=—','M='+Mx].join('\n');
+  }
+
+  function newShowHint(){
+    var it=window.pool && window.pool[window.idx];
+    if(!it) return;
+    window.hintLevel=Math.min(3,(window.hintLevel||0)+1);
+    var tgt=(it.targets && it.targets.length) ? it.targets[0] : '';
+    var inf=window.inferPatternFromSentence(tgt);
+    var basePat=(inf && inf.guess) ? String(inf.guess) : String(it.pattern||'');
+
+    if(window.hintLevel===1){
+      window.els.statusMsg.textContent = 'HINT 1（S/V/O/C/M）:\n' + buildHint1FromHINT2(tgt);
+      window.els.explain.classList.remove('show');
+    } else if(window.hintLevel===2){
+      window.els.statusMsg.textContent = 'HINT 2（正解）: ' + tgt;
+      window.els.explain.classList.remove('show');
+    } else {
+      var allArr=(it.targets&&it.targets.length)? it.targets : [];
+      var all=(allArr.length)? allArr.join(' / ') : '';
+      var msg3='HINT 3（正解例まとめ）: '+all+'\n正解の文型：'+(typeof patternLabel==='function'? patternLabel(basePat):basePat);
+      window.els.statusMsg.textContent = msg3;
       window.els.explain.classList.remove('show');
     }
   }
