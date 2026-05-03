@@ -2045,26 +2045,22 @@ try{
 
 
 <script>
-/* === HINT2→HINT1 SVOCM OVERRIDE v22 (do否定 + want to-V をO扱い) ===
-  USER RULE:
-   - She does not want to join the club.
-     S=She
-     V=does not want
-     O=to join the club (to不定詞の名詞句)
-     M=—
+/* === HINT2→HINT1 SVOCM OVERRIDE v23 (v21+v22 統合) ===
+  FIX(継続):
+    - Are you going to study tonight? → S=you / V=are going to study / M=tonight
+    - She does not want to join the club. → S=She / V=does not want / O=to join the club
 
-  実装:
-   1) do/does/did + not + 動詞 を V句に折りたたむ（V="does not want"）
-      ※既存の「do疑問はV=本動詞」方針は維持（疑問は別処理）
-   2) want/hope/plan/decide/try など + to-V で始まる場合、to不定詞句を O として扱う
-      （"to" は前置詞分割の対象外）
+  追加/統合点:
+    1) be going to + V を V句に統合（V=are going to study）
+    2) do/does/did + not + V を V句に統合（V=does not want）
+    3) want/hope/plan/decide/try 等 + to-V は O（名詞句）として扱う
 
   KEEP:
-   - WH疑問補正 / do疑問補正
-   - 完了形 not/副詞挟み fold
-   - news 誤認修正
-   - modal fold / have to fold
-   - want O to-V (=SVOC, C) は従来通り（O が先にある場合だけ）
+    - Yes/No疑問: do疑問はV=本動詞（Did you go? → V=go）
+    - WH疑問補正
+    - 完了形(not/副詞挟み) fold
+    - news誤認修正 / modal fold / have to fold
+    - want O to-V (=SVOC, C) は O が先にある場合のみ
 */
 (function(){
   var RULES = {
@@ -2170,7 +2166,7 @@ try{
     return {toks:toks, vi:vi, S:join(toks.slice(0,vi))||'—', V:String(toks[vi]||'—'), rest:toks.slice(vi+1)};
   }
 
-  // Yes/No inversion normalization (v19): DO疑問はV=本動詞
+  // Yes/No inversion normalization: DO疑問はV=本動詞
   function repairInversion(p){
     var toks=p.toks||[];
     if(toks.length<2) return p;
@@ -2191,7 +2187,7 @@ try{
     return p;
   }
 
-  // WH-ADV question normalization (v19): DO疑問はV=本動詞
+  // WH-ADV inversion normalization: DO疑問はV=本動詞
   function repairWhQuestion(p){
     var toks=p.toks||[];
     if(toks.length<3) return p;
@@ -2212,15 +2208,27 @@ try{
     return p;
   }
 
-  // NEW: do/does/did + not + V  => V="does not want" (否定のdo-support)
+  // do/does/did + not + V => V句
   function foldDoNeg(p){
     var v=lw(p.V);
     if(!RULES.DO[v]) return p;
     if(p.rest.length>=2 && lw(p.rest[0])==='not'){
-      // next should be base verb
       var mv=p.rest[1];
-      p.V = p.V + ' ' + p.rest[0] + ' ' + mv;
+      p.V = lw(p.V) + ' not ' + mv;
       p.rest = p.rest.slice(2);
+      return p;
+    }
+    return p;
+  }
+
+  // be going to + V => V句
+  function foldBeGoingTo(p){
+    var v=lw(p.V);
+    if(!RULES.BE[v]) return p;
+    if(p.rest.length>=3 && lw(p.rest[0])==='going' && lw(p.rest[1])==='to'){
+      var mv=p.rest[2];
+      p.V = lw(p.V) + ' going to ' + mv;
+      p.rest = p.rest.slice(3);
       return p;
     }
     return p;
@@ -2262,7 +2270,6 @@ try{
     return lw(parts[parts.length-1]||'');
   }
 
-  // SVOC adjective/noun complement
   function detectSVOC(restTokens){
     var r=restTokens.slice();
     if(!r.length) return null;
@@ -2280,7 +2287,6 @@ try{
     return {O:o, C:c, M:m};
   }
 
-  // SVOC to-inf: O + to ...
   function detectSVOCToInf(restTokens){
     var r=restTokens.slice();
     if(r.length<2) return null;
@@ -2294,18 +2300,8 @@ try{
     return {O:o, C:r, M:[]};
   }
 
-  // NEW: to-inf object (to ... )
   function isToInfObject(mainV, rest){
     return !!(RULES.TO_INF_OBJ[mainV] && rest && rest.length && lw(rest[0])==='to');
-  }
-
-  function parseForHints(raw){
-    var p=baseParse(raw);
-    p=repairWhQuestion(p);
-    p=repairInversion(p);
-    p=foldDoNeg(p);
-    p=foldModalVerb(foldPerfect(foldHaveTo(p)));
-    return p;
   }
 
   function firstNonNeg(rest){
@@ -2317,11 +2313,20 @@ try{
     return {tok:'', idx:0};
   }
 
+  function parseForHints(raw){
+    var p=baseParse(raw);
+    p=repairWhQuestion(p);
+    p=repairInversion(p);
+    p=foldDoNeg(p);
+    p=foldBeGoingTo(p);
+    p=foldModalVerb(foldPerfect(foldHaveTo(p)));
+    return p;
+  }
+
   window.inferPatternFromSentence = function(raw){
     var p=parseForHints(raw);
     var mainV=mainVerbFromVPhrase(p.V);
-
-    // to不定詞目的語を優先でSVO
+    // want + to-V を O として優先
     if(isToInfObject(mainV, p.rest)) return {guess:'3',verb:mainV,why:'to-inf as object'};
 
     var fn=firstNonNeg(p.rest);
@@ -2361,7 +2366,6 @@ try{
     return {negTokens:neg, objTokens:r, tailTokens:tail};
   }
 
-  // to不定詞をOとして取る（前置詞分割しない）
   function splitObjectForSVO(p){
     var mainV=mainVerbFromVPhrase(p.V);
     if(isToInfObject(mainV, p.rest)) return {O:p.rest.slice(0), M:[]};
@@ -2376,11 +2380,13 @@ try{
     var mainV=mainVerbFromVPhrase(p.V);
 
     if(pat==='1') return ['S='+p.S,'V='+p.V,'O(物)=—','C=—','M='+(join(p.rest)||'—')].join('\n');
+
     if(pat==='2'){
       var sp=splitAtFirstPrep(p.rest); var C=join(sp.head)||'—'; var M=join(sp.tail)||'—';
       if(C!=='—' && RULES.PREPS[lw(C.split(/\s+/)[0])]){ M=(C + (M==='—'?'':(' '+M))).trim(); C='—'; }
       return ['S='+p.S,'V='+p.V,'O(物)=—','C='+C,'M='+M].join('\n');
     }
+
     if(pat==='3'){
       // perfect negative special
       if(p.rest.length && lw(p.rest[0])==='not' && RULES.HAVE[lw(p.V.split(/\s+/)[0])]){
@@ -2390,6 +2396,7 @@ try{
       var split=splitObjectForSVO(p);
       return ['S='+p.S,'V='+p.V,'O(物)='+(join(split.O)||'—'),'C=—','M='+(join(split.M)||'—')].join('\n');
     }
+
     if(pat==='4'){
       var rest=p.rest.slice();
       if(rest.length && RULES.PRON_OBJ[lw(rest[0])]){
@@ -2399,6 +2406,7 @@ try{
       }
       return ['S='+p.S,'V='+p.V,'O1(人)=—','O2(物)=—','C=—','M='+(join(p.rest)||'—')].join('\n');
     }
+
     if(pat==='5'){
       var svocTo = RULES.SVOC_TO[mainV] ? detectSVOCToInf(p.rest) : null;
       if(svocTo) return ['S='+p.S,'V='+p.V,'O(物)='+(join(svocTo.O)||'—'),'C='+(join(svocTo.C)||'—'),'M=—'].join('\n');
@@ -2406,6 +2414,7 @@ try{
       if(svoc) return ['S='+p.S,'V='+p.V,'O(物)='+(join(svoc.O)||'—'),'C='+(join(svoc.C)||'—'),'M='+(join(svoc.M)||'—')].join('\n');
       return ['S='+p.S,'V='+p.V,'O(物)=—','C=—','M='+(join(p.rest)||'—')].join('\n');
     }
+
     return ['S='+p.S,'V='+p.V,'O(物)=—','C=—','M='+(join(p.rest)||'—')].join('\n');
   }
 
