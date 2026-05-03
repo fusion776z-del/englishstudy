@@ -1015,26 +1015,37 @@ if(hintLevel===1){
     els.explain.classList.remove('show');
   } else {
     // HINT3:
-  var allArr=(it.targets&&it.targets.length)? it.targets : [];
-  var hasToFor=false;
-  for(var kk=0;kk<allArr.length;kk++){ if(/\b(to|for)\b/i.test(String(allArr[kk]||''))){ hasToFor=true; break; } }
+    var allArr=(it.targets&&it.targets.length)? it.targets : [];
 
-  // Only label per-sentence patterns for true dative alternation (to/for form present)
-  if(it && it.allowAltInA && hasToFor && allArr.length>=2){
-    var parts=[];
-    for(var k=0;k<allArr.length;k++){
-      var s=allArr[k];
-      var pat=_svfix_labelForAlt(s, basePat);
-      parts.push(s+' ：'+patternLabel(pat));
+    // True dative alternation only: SVOO <-> SVO + to/for
+    var isDativeAlt = false;
+    try{
+      if(it && it.allowAltInA && allArr.length>=2 && typeof parseDative==='function'){
+        var kinds = {SVOO:0, SVO_PREP:0};
+        for(var kk=0; kk<allArr.length; kk++){
+          var dt = parseDative(tokenize(String(allArr[kk]||'')));
+          if(dt && dt.kind==='SVOO') kinds.SVOO = 1;
+          if(dt && dt.kind==='SVO_PREP') kinds.SVO_PREP = 1;
+        }
+        if(kinds.SVOO && kinds.SVO_PREP) isDativeAlt = true;
+      }
+    }catch(_e){ isDativeAlt = false; }
+
+    if(isDativeAlt){
+      var parts=[];
+      for(var k=0;k<allArr.length;k++){
+        var s=allArr[k];
+        var pat=_svfix_labelForAlt(s, basePat);
+        parts.push(s+' ：'+patternLabel(pat));
+      }
+      els.statusMsg.textContent='HINT 3（正解例まとめ）: '+parts.join(' / ');
+    } else {
+      var all=(allArr.length)? allArr.join(' / ') : '';
+      var msg3='HINT 3（正解例まとめ）: '+all;
+      msg3+='\n正解の文型：'+patternLabel(patForHints);
+      els.statusMsg.textContent=msg3;
     }
-    els.statusMsg.textContent='HINT 3（正解例まとめ）: '+parts.join(' / ');
-  } else {
-    var all=(allArr.length)? allArr.join(' / ') : '';
-    var msg3='HINT 3（正解例まとめ）: '+all;
-    msg3+='\n正解の文型：'+patternLabel(patForHints);
-    els.statusMsg.textContent=msg3;
-  }
-  els.explain.classList.remove('show');
+    els.explain.classList.remove('show');
 }
 }
 
