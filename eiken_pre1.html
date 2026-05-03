@@ -1638,7 +1638,115 @@ try{
   }
 
   function buildHint1FromHINT2(sentence){
-    const p=parseForHints(sentence);
+
+  /* INV(HINT1) FIX v5: robust aux selection (skips aux inside lead clause), uses correct pattern when available */
+  try {
+    var __t = tokenize(sentence || '');
+    function __lw(x){ return String(x||'').toLowerCase(); }
+    function __detok(a){ return (a||[]).join(' ').replace(/\s+([.,!?;:])/g,'$1'); }
+    function __stripEnd(a){ a=(a||[]).slice(); var __end={'.':1,'?':1,'!':1}; while(a.length && __end[a[a.length-1]]) a.pop(); return a; }
+    function __stripCommaFront(a){ a=(a||[]).slice(); while(a.length && a[0]===',') a.shift(); return a; }
+    var __AUX={have:1,has:1,had:1,do:1,does:1,did:1,can:1,could:1,should:1,would:1,will:1,may:1,might:1,must:1,am:1,is:1,are:1,was:1,were:1};
+    var __DET={a:1,an:1,the:1,this:1,that:1,these:1,those:1,my:1,your:1,his:1,her:1,our:1,their:1};
+    var __PRON={i:1,you:1,he:1,she:1,we:1,they:1,it:1,there:1,anyone:1,anybody:1,everyone:1};
+
+    if(__t && __t.length>=4){
+      // 0) So/Such inversion (SVC)
+      if(__lw(__t[0])==='so' || __lw(__t[0])==='such'){
+        var __beIdx=-1;
+        for(var __bi=1; __bi<__t.length; __bi++){
+          var __w=__lw(__t[__bi]);
+          if(__w==='am'||__w==='is'||__w==='are'||__w==='was'||__w==='were'){ __beIdx=__bi; break; }
+          if(__t[__bi]===',') break;
+        }
+        if(__beIdx>0 && __beIdx+1<__t.length){
+          var __C = __detok(__t.slice(0, __beIdx)).replace(/\s*,\s*$/,'').trim() || '—';
+          var __Vb = __t[__beIdx] || '—';
+          var __S2 = (__t[__beIdx+1] || '—');
+          var __rest2 = __detok(__stripCommaFront(__stripEnd(__t.slice(__beIdx+2)))).trim() || '—';
+          return ['S='+__S2,'V='+__Vb,'O(物)=—','C='+__C,'M='+__rest2].join('\\n');
+        }
+      }
+
+      // 1) lead phrase + auxiliary inversion: choose aux that is followed by a likely subject-start token.
+      var __auxIdx=-1;
+      for(var __i=1; __i<__t.length-1; __i++){
+        var __tok=__lw(__t[__i]);
+        var __next=__lw(__t[__i+1]);
+        if(__AUX[__tok] && (__PRON[__next] || __DET[__next] || (/^[A-Z]/.test(__t[__i+1]||'')))){
+          __auxIdx=__i; break;
+        }
+      }
+
+      if(__auxIdx>0){
+        var __lead = __detok(__t.slice(0, __auxIdx)).replace(/\s*,\s*$/,'').trim();
+        var __auxTok = __t[__auxIdx];
+        var __after = __stripCommaFront(__stripEnd(__t.slice(__auxIdx+1)));
+        if(__after.length>=2){
+          // prefer correct pattern from current item if available
+          var __patGuess='';
+          var __verbGuess='';
+          try{
+            var __it = (typeof window!=='undefined' && window.pool && typeof window.idx!=='undefined') ? window.pool[window.idx] : null;
+            if(__it && __it.pattern) __patGuess = String(__it.pattern);
+          }catch(__eIt){}
+          try{
+            if(typeof window!=='undefined' && typeof window.inferPatternFromSentence==='function'){
+              var __inf2 = window.inferPatternFromSentence(sentence);
+              if(__inf2){
+                if(!__patGuess && __inf2.guess) __patGuess = String(__inf2.guess);
+                if(__inf2.verb) __verbGuess = __lw(__inf2.verb);
+              }
+            }
+          }catch(__e2){}
+
+          // locate main verb in __after using verbGuess
+          var __verbIdx=-1;
+          if(__verbGuess && !__AUX[__verbGuess]){
+            for(var __j=0; __j<__after.length; __j++){
+              if(__lw(__after[__j])===__verbGuess){ __verbIdx=__j; break; }
+            }
+          }
+
+          var __S_tokens, __mainV, __tailTokens;
+          if(__verbIdx>=1){
+            __S_tokens = __after.slice(0, __verbIdx);
+            __mainV = __after[__verbIdx];
+            __tailTokens = __after.slice(__verbIdx+1);
+          } else {
+            // Heuristic: determiner + noun as subject if possible
+            if(__after.length>=3 && __DET[__lw(__after[0])]){
+              __S_tokens = __after.slice(0,2);
+              __mainV = __after[2];
+              __tailTokens = __after.slice(3);
+            } else {
+              __S_tokens = [__after[0]];
+              __mainV = __after[1];
+              __tailTokens = __after.slice(2);
+            }
+          }
+
+          var __S = __detok(__S_tokens).trim() || '—';
+          var __V = (String(__auxTok||'—') + ' ' + String(__mainV||'—')).trim();
+          var __tail = __detok(__stripCommaFront(__stripEnd(__tailTokens))).replace(/\s*[.?!]+$/,'').trim();
+
+          // If SV (pattern 1): O is —, everything after V goes to M
+          if(String(__patGuess)==='1'){
+            var __Msv = __lead || '—';
+            if(__tail) __Msv = (__Msv==='—') ? __tail : (__Msv + ' / ' + __tail);
+            return ['S='+__S,'V='+__V,'O(物)=—','C=—','M='+(__Msv||'—')].join('\\n');
+          }
+
+          // Otherwise treat tail as O, lead as M
+          var __O = __tail || '—';
+          var __M = __lead || '—';
+          return ['S='+__S,'V='+__V,'O(物)='+__O,'C=—','M='+__M].join('\\n');
+        }
+      }
+    }
+  } catch(__e) {}
+
+const p=parseForHints(sentence);
     const inf=window.inferPatternFromSentence(sentence) || {guess:'1'};
     const pat=String(inf.guess||'1');
     const mainV=mainVerbFromVPhrase(p.V);
@@ -1693,7 +1801,7 @@ try{
       if(!key || seen.has(key)) continue;
       seen.add(key);
       const inf=window.inferPatternFromSentence(s);
-      const pat=String((inf&&inf.guess) || correct || '');
+      const pat=String(correct || ((inf&&inf.guess)||''));
       rows.push({s, pat});
     }
 
@@ -1738,6 +1846,20 @@ try{
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', replaceHintButton);
   else replaceHintButton();
 })();
+
+
+/* FILE:// WARNING */
+(function(){
+  try{
+    if(window.location && window.location.protocol==='file:'){
+      var el=document.getElementById('statusSub');
+      if(el){
+        el.textContent='※ file:// 直開きはブラウザ制限で不安定になります。http://localhost で開くのがおすすめです。';
+      }
+    }
+  }catch(e){}
+})();
+
 </script>
 
 </body></html>
