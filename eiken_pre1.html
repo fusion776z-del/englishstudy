@@ -133,6 +133,9 @@ box-shadow:0 6px 20px rgba(0,0,0,.35);}
   position: relative;
   z-index: 10;
 }
+
+/* HINT NEWLINE DISPLAY */
+#statusMsg, #expDiff{white-space:pre-line;}
 </style>
 </head><body>
 <div class="index-exit">
@@ -1664,7 +1667,7 @@ try{
           var __Vb = __t[__beIdx] || '—';
           var __S2 = (__t[__beIdx+1] || '—');
           var __rest2 = __detok(__stripCommaFront(__stripEnd(__t.slice(__beIdx+2)))).trim() || '—';
-          return ['S='+__S2,'V='+__Vb,'O(物)=—','C='+__C,'M='+__rest2].join('\\n');
+          return ['S='+__S2,'V='+__Vb,'O(物)=—','C='+__C,'M='+__rest2].join('\n');
         }
       }
 
@@ -1734,13 +1737,13 @@ try{
           if(String(__patGuess)==='1'){
             var __Msv = __lead || '—';
             if(__tail) __Msv = (__Msv==='—') ? __tail : (__Msv + ' / ' + __tail);
-            return ['S='+__S,'V='+__V,'O(物)=—','C=—','M='+(__Msv||'—')].join('\\n');
+            return ['S='+__S,'V='+__V,'O(物)=—','C=—','M='+(__Msv||'—')].join('\n');
           }
 
           // Otherwise treat tail as O, lead as M
           var __O = __tail || '—';
           var __M = __lead || '—';
-          return ['S='+__S,'V='+__V,'O(物)='+__O,'C=—','M='+__M].join('\\n');
+          return ['S='+__S,'V='+__V,'O(物)='+__O,'C=—','M='+__M].join('\n');
         }
       }
     }
@@ -1801,7 +1804,7 @@ const p=parseForHints(sentence);
       if(!key || seen.has(key)) continue;
       seen.add(key);
       const inf=window.inferPatternFromSentence(s);
-      const pat=String(correct || ((inf&&inf.guess)||''));
+      const pat=String((inf&&inf.guess) || correct || '');
       rows.push({s, pat});
     }
 
@@ -1846,20 +1849,6 @@ const p=parseForHints(sentence);
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', replaceHintButton);
   else replaceHintButton();
 })();
-
-
-/* FILE:// WARNING */
-(function(){
-  try{
-    if(window.location && window.location.protocol==='file:'){
-      var el=document.getElementById('statusSub');
-      if(el){
-        el.textContent='※ file:// 直開きはブラウザ制限で不安定になります。http://localhost で開くのがおすすめです。';
-      }
-    }
-  }catch(e){}
-})();
-
 </script>
 
 </body></html>
