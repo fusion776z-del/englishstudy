@@ -2044,48 +2044,57 @@ try{
 
 
 
-<script>
-/* === HINT2→HINT1 SVOCM OVERRIDE v28 (v27 + Q36 motion/home fix) ===
-  Patch goal:
-    - Did they come home early? を S=they / V=come / M=home early（SV）にする
-    - home を目的語(O)にしない（方向副詞扱い）
 
-  This script also includes the key v27-era fixes used in this project:
-    - DO/WH疑問: do-support は V=本動詞
-    - do否定: does not want を V句に統合
-    - be going to: are going to study を V句に統合
-    - want + to-V: to不定詞を O 扱い
-    - be否定: He is not late today → C=late, M=not today（SVC）
+
+<script>
+/* === HINT2→HINT1 SVOCM OVERRIDE v33 (比較: better/most + SVC & 主語2語のbe文を崩さない) ===
+  FIX:
+    - This restaurant is better than the one near my house. が S=This / V=restaurant になる
+      （動詞位置検出が早すぎて名詞をV扱いしていた）
+    - English is more difficult than math.（more+adj）/ Today is hotter than yesterday.（-er）もSVCで維持
+
+  対応:
+    1) pickVerbIndexRobust を改修：BE/DO/MODAL/have を優先してVにする。名詞をVにしない。
+    2) be/link + (not) + 形容詞/名詞補語 + 比較（better/best含む） をSVC
+    3) more/less + adj を補語C=2語で取る
+    4) HINT3：重複除去＋正解文型以外除外（v31）を維持
 */
 (function(){
-  const RULES = {
-    PREPS: new Set(['at','in','on','to','for','from','with','by','about','of','into','onto','over','under','after','before','between','among','during','without','against','around','because']),
-    BE: new Set(['am','is','are','was','were','be','been','being']),
-    DO: new Set(['do','does','did']),
-    MODAL: new Set(['will','would','can','could','shall','should','may','might','must']),
-    DET: new Set(['a','an','the','this','that','these','those','my','your','his','her','our','their','some','any','no','each','every']),
-    PRON_OBJ: new Set(['me','him','her','us','them','you','it']),
-    SUBJ_PRON: new Set(['i','you','he','she','we','they','it','there']),
-    WH_ADV: new Set(['where','when','why','how']),
-    ADV: new Set(['not','yet','ever','never','already','just','still','again','today','tomorrow','yesterday','now','soon','here','there','always','often','sometimes','usually','very','tonight','early','late']),
-    LINKLIKE: new Set(['become','became','get','got','turn','turned','grow','grew','seem','seems','look','looks','feel','feels','remain','remains','stay','stays']),
-    TO_INF_OBJ: new Set(['want','wants','wanted','hope','hopes','hoped','plan','plans','planned','decide','decides','decided','try','tries','tried','need','needs','needed','promise','promises','promised']),
-    // v28 patch: motion + direction adverbs => M
-    MOTION_V: new Set(['come','go','return','arrive','leave']),
-    DIR_ADV: new Set(['home','here','there','back','away','abroad','upstairs','downstairs','downtown'])
-  };
+  const PREPS = new Set(['at','in','on','to','for','from','with','by','about','of','into','onto','over','under','after','before','between','among','during','without','against','around','because','than']);
+  const BE = new Set(['am','is','are','was','were','be','been','being']);
+  const DO = new Set(['do','does','did']);
+  const MODAL = new Set(['will','would','can','could','shall','should','may','might','must']);
+  const HAVE = new Set(['have','has','had']);
+  const DET = new Set(['a','an','the','this','that','these','those','my','your','his','her','our','their','some','any','no','each','every']);
+  const SUBJ_PRON = new Set(['i','you','he','she','we','they','it','there']);
+  const WH_ADV = new Set(['where','when','why','how']);
+  const ADV = new Set(['not','yet','ever','never','already','just','still','again','today','tomorrow','yesterday','now','soon','here','there','always','often','sometimes','usually','very','tonight','early','late','then']);
+  const LINKLIKE = new Set(['become','became','get','got','turn','turned','grow','grew','seem','seems','look','looks','feel','feels','remain','remains','stay','stays']);
+  const TO_INF_OBJ = new Set(['want','wants','wanted','hope','hopes','hoped','plan','plans','planned','decide','decides','decided','try','tries','tried','need','needs','needed','promise','promises','promised']);
+  const MOTION_V = new Set(['come','go','return','arrive','leave']);
+  const DIR_ADV = new Set(['home','here','there','back','away','abroad','upstairs','downstairs','downtown']);
+  const MORELESS = new Set(['more','less']);
+
+  // irregular / common verbs (minimal)
+  const IRR = new Set(['went','came','saw','made','gave','took','found','kept','told','sent','taught','became','began','left','felt','got','knew','thought','said','held','brought','wrote','read','spoke','drove','ran','built','chose','ate','drank','slept','met','fell','grew']);
 
   function lw(x){ return (typeof lower==='function') ? lower(x) : String(x||'').toLowerCase(); }
+
   function normalizeContractions(s){
     s=String(s||'');
+    s=s.replace(/[’‛＇`]/g,"'");
     s=s.replace(/\b([A-Za-z]+)'ve\b/g,'$1 have');
     s=s.replace(/\bwon't\b/gi,'will not');
     s=s.replace(/\bcan't\b/gi,'cannot');
+    s=s.replace(/\b(don't)\b/gi,'do not');
+    s=s.replace(/\b(doesn't)\b/gi,'does not');
+    s=s.replace(/\b(didn't)\b/gi,'did not');
     s=s.replace(/\bI'm\b/gi,'I am');
     s=s.replace(/\b(we|they|you)\s*'re\b/gi,'$1 are');
     s=s.replace(/\b(he|she|it)\s*'s\b/gi,'$1 is');
     return s;
   }
+
   function tokenizeSafe(raw){
     raw = normalizeContractions(raw);
     return (typeof tokenize==='function') ? tokenize(raw||'') : String(raw||'').trim().split(/\s+/);
@@ -2096,16 +2105,47 @@ try{
     return toks;
   }
   function join(toks){ return toks && toks.length ? toks.join(' ').trim() : ''; }
-  function isAdvLike(w){ w=lw(w); return RULES.ADV.has(w) || /ly$/.test(w); }
+  function isAdvLike(w){ w=lw(w); return ADV.has(w) || /ly$/.test(w); }
+
   function isAdjLike(w){
     w=lw(w);
     if(!w) return false;
+    if(PREPS.has(w)) return false;
     if(typeof looksAdj==='function' && looksAdj(w)) return true;
-    // cheap heuristic
+    // comparative/superlative (better/best 포함)
+    if(/(er|est)$/.test(w)) return true;
+    if(w==='better' || w==='best' || w==='worse' || w==='worst') return true;
     if(/(y|ful|ous|able|ible|al|ive|less|ic|ish|ed)$/.test(w)) return true;
-    // common comps
-    if(['late','early','busy','happy','sad','angry','tired','ready','sure','quiet','open','closed'].includes(w)) return true;
+    if(['late','early','busy','happy','sad','angry','tired','ready','sure','quiet','open','closed','hot','cold','warm','cool','difficult','easy','important','interesting','boring','expensive','comfortable','hard'].includes(w)) return true;
     return false;
+  }
+
+  function isFiniteVerbLike(tok, prevTok){
+    const w=lw(tok), prev=lw(prevTok);
+    if(!w) return false;
+    if(BE.has(w) || DO.has(w) || MODAL.has(w) || HAVE.has(w)) return true;
+    if(IRR.has(w)) return true;
+    if(PREPS.has(w) || WH_ADV.has(w) || isAdvLike(w)) return false;
+    // avoid treating noun after determiner as verb (this restaurant)
+    if(DET.has(prev)) return false;
+    // simple verb endings
+    if(/^[a-z]+ed$/.test(w)) return true;
+    if(/^[a-z]+(s|es)$/.test(w)) return true;
+    return false;
+  }
+
+  function pickVerbIndexRobust(toks){
+    // Prefer auxiliaries / be / do / modal / have
+    for(let i=1;i<toks.length;i++){
+      const w=lw(toks[i]);
+      if(BE.has(w) || DO.has(w) || MODAL.has(w) || HAVE.has(w)) return i;
+    }
+    // Then verb-like heuristics
+    for(let i=1;i<toks.length;i++){
+      if(isFiniteVerbLike(toks[i], toks[i-1])) return i;
+    }
+    // fallback
+    return Math.min(1, Math.max(0, toks.length-1));
   }
 
   function consumeNPShort(toks, start){
@@ -2113,8 +2153,8 @@ try{
     let i=start;
     if(i>=toks.length) return {np:out,next:i};
     let w=lw(toks[i]);
-    if(RULES.SUBJ_PRON.has(w)) return {np:[toks[i]], next:i+1};
-    if(RULES.DET.has(w)){
+    if(SUBJ_PRON.has(w)) return {np:[toks[i]], next:i+1};
+    if(DET.has(w)){
       out.push(toks[i]); i++;
       if(i<toks.length){ out.push(toks[i]); i++; }
       return {np:out,next:i};
@@ -2123,19 +2163,8 @@ try{
   }
 
   function splitAtFirstPrep(toks){
-    for(let i=0;i<toks.length;i++) if(RULES.PREPS.has(lw(toks[i]))) return {head:toks.slice(0,i), tail:toks.slice(i)};
+    for(let i=0;i<toks.length;i++) if(PREPS.has(lw(toks[i]))) return {head:toks.slice(0,i), tail:toks.slice(i)};
     return {head:toks.slice(0), tail:[]};
-  }
-
-  function pickVerbIndexRobust(toks){
-    // simple: first aux/modal/verb-like after first token
-    for(let i=1;i<toks.length;i++){
-      const w=lw(toks[i]);
-      if(RULES.WH_ADV.has(w)) continue;
-      if(RULES.BE.has(w) || RULES.DO.has(w) || RULES.MODAL.has(w) || ['have','has','had'].includes(w)) return i;
-      if(/ed$/.test(w) || /s$/.test(w) || /^[a-z]+$/.test(w)) return i;
-    }
-    return Math.min(1, Math.max(0, toks.length-1));
   }
 
   function baseParse(raw){
@@ -2144,47 +2173,47 @@ try{
     return {toks, vi, S: join(toks.slice(0,vi))||'—', V: String(toks[vi]||'—'), rest: toks.slice(vi+1)};
   }
 
-  // WH question normalization (where/when/why/how + do + NP + V)
+  // WH + do + (not) + NP + V
   function repairWhQuestion(p){
     const toks=p.toks||[];
-    if(toks.length<3) return p;
+    if(toks.length<4) return p;
     const wh=lw(toks[0]);
     const aux=lw(toks[1]);
-    if(!RULES.WH_ADV.has(wh)) return p;
-    if(RULES.DO.has(aux)){
-      const subj=consumeNPShort(toks,2);
-      if(subj.next < toks.length){
-        p.S = join(subj.np);
-        p.V = toks[subj.next];
-        p.rest = [toks[0]].concat(toks.slice(subj.next+1));
-        return p;
-      }
+    if(!WH_ADV.has(wh) || !DO.has(aux)) return p;
+    let i=2, neg=false;
+    if(lw(toks[i])==='not'){ neg=true; i++; }
+    const subj=consumeNPShort(toks,i);
+    if(subj.next < toks.length){
+      p.S = join(subj.np);
+      p.V = toks[subj.next];
+      const rest=toks.slice(subj.next+1);
+      p.rest = [toks[0]].concat(neg?['not']:[]).concat(rest);
     }
     return p;
   }
 
-  // Yes/No question normalization (do + NP + V)
+  // do + (not) + NP + V
   function repairDoQuestion(p){
     const toks=p.toks||[];
     if(toks.length<3) return p;
     const first=lw(toks[0]);
-    if(!RULES.DO.has(first)) return p;
-    const subj=consumeNPShort(toks,1);
+    if(!DO.has(first)) return p;
+    let i=1, neg=false;
+    if(lw(toks[i])==='not'){ neg=true; i++; }
+    const subj=consumeNPShort(toks,i);
     if(subj.next < toks.length){
       p.S = join(subj.np);
       p.V = toks[subj.next];
-      p.rest = toks.slice(subj.next+1);
-      return p;
+      const rest=toks.slice(subj.next+1);
+      p.rest = (neg?['not']:[]).concat(rest);
     }
     return p;
   }
 
-  // do neg fold: does not want
+  // declarative do-neg fold (does not want)
   function foldDoNeg(p){
-    const toks=p.toks||[];
-    // only applies when original had do-support as verb token (rare after do-question normalization)
     const v=lw(p.V);
-    if(!RULES.DO.has(v)) return p;
+    if(!DO.has(v)) return p;
     if(p.rest.length>=2 && lw(p.rest[0])==='not'){
       p.V = p.V + ' ' + p.rest[0] + ' ' + p.rest[1];
       p.rest = p.rest.slice(2);
@@ -2192,10 +2221,10 @@ try{
     return p;
   }
 
-  // be going to fold: are going to study
+  // be going to fold
   function foldBeGoingTo(p){
     const v=lw(p.V);
-    if(!RULES.BE.has(v)) return p;
+    if(!BE.has(v)) return p;
     if(p.rest.length>=3 && lw(p.rest[0])==='going' && lw(p.rest[1])==='to'){
       p.V = p.V + ' ' + p.rest[0] + ' ' + p.rest[1] + ' ' + p.rest[2];
       p.rest = p.rest.slice(3);
@@ -2209,42 +2238,12 @@ try{
   }
 
   function isToInfObject(mainV, rest){
-    return RULES.TO_INF_OBJ.has(lw(mainV)) && rest && rest.length && lw(rest[0])==='to';
+    return TO_INF_OBJ.has(lw(mainV)) && rest && rest.length && lw(rest[0])==='to';
   }
 
-  // v28 patch: motion + direction adverb => treat as SV (M)
   function isDirAdvAfterMotion(mainV, tok){
-    return RULES.MOTION_V.has(lw(mainV)) && RULES.DIR_ADV.has(lw(tok));
+    return MOTION_V.has(lw(mainV)) && DIR_ADV.has(lw(tok));
   }
-
-  // pattern inference
-  window.inferPatternFromSentence = function(raw){
-    const p=parseForHints(raw);
-    const mainV=mainVerbFromVPhrase(p.V);
-    const r=p.rest||[];
-
-    // be/link + (not) + complement => SVC
-    if(RULES.BE.has(mainV) || RULES.LINKLIKE.has(mainV)){
-      let idx=0;
-      if(lw(r[0]||'')==='not') idx=1;
-      const cTok=lw(r[idx]||'');
-      if(cTok && (isAdjLike(cTok) || RULES.DET.has(cTok))) return {guess:'2', verb:mainV, why:'be/link + (not) + C'};
-    }
-
-    // want + to-inf => SVO
-    if(isToInfObject(mainV, r)) return {guess:'3', verb:mainV, why:'to-inf as object'};
-
-    // motion + direction => SV
-    if(isDirAdvAfterMotion(mainV, lw(r[0]||''))) return {guess:'1', verb:mainV, why:'motion + direction adv'};
-
-    // prep/adverb after verb => SV
-    const a1=lw(r[0]||'');
-    if(a1 && (RULES.PREPS.has(a1) || isAdvLike(a1))) return {guess:'1', verb:mainV, why:'prep/adv after V'};
-
-    // default SVO if something remains
-    if(r.length) return {guess:'3', verb:mainV, why:'fallback SVO'};
-    return {guess:'1', verb:mainV, why:'default SV'};
-  };
 
   function parseForHints(raw){
     let p=baseParse(raw);
@@ -2255,14 +2254,46 @@ try{
     return p;
   }
 
-  // build HINT1 from HINT2
+  window.inferPatternFromSentence = function(raw){
+    const p=parseForHints(raw);
+    const mainV=mainVerbFromVPhrase(p.V);
+    const r=p.rest||[];
+
+    // SVC: be/link + (not) + adjective/noun OR more/less + adjective
+    if(BE.has(mainV) || LINKLIKE.has(mainV)){
+      let idx=0;
+      if(lw(r[0]||'')==='not') idx=1;
+      const first=lw(r[idx]||'');
+      const second=lw(r[idx+1]||'');
+      if(first && (isAdjLike(first) || DET.has(first))) return {guess:'2', verb:mainV, why:'be/link + (not) + C'};
+      if(MORELESS.has(first) && second && isAdjLike(second)) return {guess:'2', verb:mainV, why:'be/link + (not) + more/less + adj'};
+    }
+
+    if(isToInfObject(mainV, r)) return {guess:'3', verb:mainV, why:'to-inf as object'};
+    if(isDirAdvAfterMotion(mainV, lw(r[0]||''))) return {guess:'1', verb:mainV, why:'motion + direction adv'};
+
+    let start=0;
+    let a1=lw(r[0]||'');
+    if(a1==='not'){ start=1; a1=lw(r[1]||''); }
+    if(a1 && (PREPS.has(a1) || isAdvLike(a1))) return {guess:'1', verb:mainV, why:'prep/adv after V'};
+
+    if(r.length>start) return {guess:'3', verb:mainV, why:'fallback SVO'};
+    return {guess:'1', verb:mainV, why:'default SV'};
+  };
+
+  // SVC complement split: C can be 1 word OR (more/less + adj)
   function splitBeComplement(rest){
     const r=rest.slice();
     const M=[];
     if(r.length && lw(r[0])==='not') M.push(r.shift());
     const C=[];
-    if(r.length) C.push(r.shift());
-    // remainder to M
+    if(!r.length) return {C, M};
+    if(MORELESS.has(lw(r[0])) && r.length>=2 && isAdjLike(lw(r[1]))){
+      C.push(r.shift());
+      C.push(r.shift());
+    } else {
+      C.push(r.shift());
+    }
     while(r.length) M.push(r.shift());
     return {C, M};
   }
@@ -2278,39 +2309,60 @@ try{
       return ['S='+p.S,'V='+p.V,'O(物)=—','C='+(join(s.C)||'—'),'M='+(join(s.M)||'—')].join('\n');
     }
 
-    if(pat==='1'){
-      return ['S='+p.S,'V='+p.V,'O(物)=—','C=—','M='+(join(p.rest)||'—')].join('\n');
-    }
+    if(pat==='1') return ['S='+p.S,'V='+p.V,'O(物)=—','C=—','M='+(join(p.rest)||'—')].join('\n');
 
-    if(pat==='3'){
-      // if motion+direction, force O empty and M all
-      if(isDirAdvAfterMotion(mainV, lw(p.rest[0]||''))){
-        return ['S='+p.S,'V='+p.V,'O(物)=—','C=—','M='+(join(p.rest)||'—')].join('\n');
-      }
-      // to-inf object
-      if(isToInfObject(mainV, p.rest)){
-        return ['S='+p.S,'V='+p.V,'O(物)='+(join(p.rest)||'—'),'C=—','M=—'].join('\n');
-      }
-      const sp=splitAtFirstPrep(p.rest);
-      return ['S='+p.S,'V='+p.V,'O(物)='+(join(sp.head)||'—'),'C=—','M='+(join(sp.tail)||'—')].join('\n');
+    // pat==='3'
+    let rest=p.rest.slice();
+    let M=[];
+    if(rest.length && lw(rest[0])==='not') M.push(rest.shift());
+    if(isDirAdvAfterMotion(mainV, lw(rest[0]||''))){
+      return ['S='+p.S,'V='+p.V,'O(物)=—','C=—','M='+(join(M.concat(rest))||'—')].join('\n');
     }
+    if(isToInfObject(mainV, rest)){
+      return ['S='+p.S,'V='+p.V,'O(物)='+(join(rest)||'—'),'C=—','M='+(join(M)||'—')].join('\n');
+    }
+    const sp=splitAtFirstPrep(rest);
+    return ['S='+p.S,'V='+p.V,'O(物)='+(join(sp.head)||'—'),'C=—','M='+(join(M.concat(sp.tail))||'—')].join('\n');
+  }
 
-    return ['S='+p.S,'V='+p.V,'O(物)=—','C=—','M='+(join(p.rest)||'—')].join('\n');
+  // HINT3 dedupe + filter by correct pattern
+  function normKey(s){
+    s = normalizeContractions(s);
+    s = s.toLowerCase();
+    s = s.replace(/[“”]/g,'"');
+    s = s.replace(/[^a-z0-9\s]/g,' ');
+    s = s.replace(/\s+/g,' ').trim();
+    return s;
   }
 
   function buildHint3(it){
     const allArr=(it && it.targets && it.targets.length) ? it.targets : [];
     if(!allArr.length) return 'HINT 3（正解例まとめ）: ';
-    const parts=[];
+
+    const correct = String(it.pattern||'');
+    const seen = new Set();
+    const rows = [];
+
     for(let i=0;i<allArr.length;i++){
       const s=String(allArr[i]||'');
+      const key=normKey(s);
+      if(!key || seen.has(key)) continue;
+      seen.add(key);
       const inf=window.inferPatternFromSentence(s);
-      const pat=String((inf&&inf.guess) || (it.pattern||''));
-      parts.push(s+' ：'+(typeof patternLabel==='function'? patternLabel(pat):pat));
+      const pat=String((inf&&inf.guess) || correct || '');
+      rows.push({s, pat});
     }
-    const header='HINT 3（正解例まとめ）: '+parts.join(' / ');
-    const patLine='正解の文型：'+(typeof patternLabel==='function'? patternLabel(String(it.pattern||'')) : String(it.pattern||''));
-    return header+'\n'+patLine;
+
+    let filtered = rows;
+    if(correct){
+      const keep = rows.filter(r=>String(r.pat)===String(correct));
+      if(keep.length) filtered = keep;
+    }
+
+    const parts = filtered.map(r=> r.s + ' ：' + (typeof patternLabel==='function' ? patternLabel(String(r.pat)) : String(r.pat)) );
+    const header = 'HINT 3（正解例まとめ）: ' + parts.join(' / ');
+    const patLine = '正解の文型：' + (typeof patternLabel==='function' ? patternLabel(String(correct)) : String(correct));
+    return header + '\n' + patLine;
   }
 
   function newShowHint(){
