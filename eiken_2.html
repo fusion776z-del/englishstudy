@@ -1324,4 +1324,386 @@ try{
 })();
 
 </script>
+
+<script>
+/* === HINT2→HINT1 SVOCM OVERRIDE v35 (比較: better/most + SVC & 主語2語のbe文を崩さない) ===
+  FIX:
+    - This restaurant is better than the one near my house. が S=This / V=restaurant になる
+      （動詞位置検出が早すぎて名詞をV扱いしていた）
+    - English is more difficult than math.（more+adj）/ Today is hotter than yesterday.（-er）もSVCで維持
+
+  対応:
+    1) pickVerbIndexRobust を改修：BE/DO/MODAL/have を優先してVにする。名詞をVにしない。
+    2) be/link + (not) + 形容詞/名詞補語 + 比較（better/best含む） をSVC
+    3) more/less + adj を補語C=2語で取る
+    4) HINT3：重複除去＋正解文型以外除外（v31）を維持
+
+  NEW:
+    - She is the most popular in her class. → C=the most popular / M=in her class
+*/
+(function(){
+  const PREPS = new Set(['at','in','on','to','for','from','with','by','about','of','into','onto','over','under','after','before','between','among','during','without','against','around','because','than']);
+  const BE = new Set(['am','is','are','was','were','be','been','being']);
+  const DO = new Set(['do','does','did']);
+  const MODAL = new Set(['will','would','can','could','shall','should','may','might','must']);
+  const HAVE = new Set(['have','has','had']);
+  const DET = new Set(['a','an','the','this','that','these','those','my','your','his','her','our','their','some','any','no','each','every']);
+  const SUBJ_PRON = new Set(['i','you','he','she','we','they','it','there']);
+  const WH_ADV = new Set(['where','when','why','how']);
+  const ADV = new Set(['not','yet','ever','never','already','just','still','again','today','tomorrow','yesterday','now','soon','here','there','always','often','sometimes','usually','very','tonight','early','late','then']);
+  const LINKLIKE = new Set(['become','became','get','got','turn','turned','grow','grew','seem','seems','look','looks','feel','feels','remain','remains','stay','stays']);
+  const TO_INF_OBJ = new Set(['want','wants','wanted','hope','hopes','hoped','plan','plans','planned','decide','decides','decided','try','tries','tried','need','needs','needed','promise','promises','promised']);
+  const MOTION_V = new Set(['come','go','return','arrive','leave']);
+  const DIR_ADV = new Set(['home','here','there','back','away','abroad','upstairs','downstairs','downtown']);
+  const MORELESS = new Set(['more','less']);
+
+  // irregular / common verbs (minimal)
+  const IRR = new Set(['went','came','saw','made','gave','took','found','kept','told','sent','taught','became','began','left','felt','got','knew','thought','said','held','brought','wrote','read','spoke','drove','ran','built','chose','ate','drank','slept','met','fell','grew']);
+
+  function lw(x){ return (typeof lower==='function') ? lower(x) : String(x||'').toLowerCase(); }
+
+  function normalizeContractions(s){
+    s=String(s||'');
+    s=s.replace(/[’‛＇`]/g,"'");
+    s=s.replace(/\b([A-Za-z]+)'ve\b/g,'$1 have');
+    s=s.replace(/\bwon't\b/gi,'will not');
+    s=s.replace(/\bcan't\b/gi,'cannot');
+    s=s.replace(/\b(don't)\b/gi,'do not');
+    s=s.replace(/\b(doesn't)\b/gi,'does not');
+    s=s.replace(/\b(didn't)\b/gi,'did not');
+    s=s.replace(/\bI'm\b/gi,'I am');
+    s=s.replace(/\b(we|they|you)\s*'re\b/gi,'$1 are');
+    s=s.replace(/\b(he|she|it)\s*'s\b/gi,'$1 is');
+    return s;
+  }
+
+  function tokenizeSafe(raw){
+    raw = normalizeContractions(raw);
+    return (typeof tokenize==='function') ? tokenize(raw||'') : String(raw||'').trim().split(/\s+/);
+  }
+  function trimPunc(toks){
+    if(typeof isWord!=='function') return toks;
+    while(toks.length && !isWord(toks[toks.length-1])) toks.pop();
+    return toks;
+  }
+  function join(toks){ return toks && toks.length ? toks.join(' ').trim() : ''; }
+  function isAdvLike(w){ w=lw(w); return ADV.has(w) || /ly$/.test(w); }
+
+  function isAdjLike(w){
+    w=lw(w);
+    if(!w) return false;
+    if(PREPS.has(w)) return false;
+    if(typeof looksAdj==='function' && looksAdj(w)) return true;
+    // comparative/superlative (better/best 포함)
+    if(/(er|est)$/.test(w)) return true;
+    if(w==='better' || w==='best' || w==='worse' || w==='worst') return true;
+    if(/(y|ful|ous|able|ible|al|ive|less|ic|ish|ed)$/.test(w)) return true;
+    if(['late','early','busy','happy','sad','angry','tired','ready','sure','quiet','open','closed','hot','cold','warm','cool','difficult','easy','important','interesting','boring','expensive','comfortable','hard', 'popular'].includes(w)) return true;
+    return false;
+  }
+
+  function isFiniteVerbLike(tok, prevTok){
+    const w=lw(tok), prev=lw(prevTok);
+    if(!w) return false;
+    if(BE.has(w) || DO.has(w) || MODAL.has(w) || HAVE.has(w)) return true;
+    if(IRR.has(w)) return true;
+    if(PREPS.has(w) || WH_ADV.has(w) || isAdvLike(w)) return false;
+    // avoid treating noun after determiner as verb (this restaurant)
+    if(DET.has(prev)) return false;
+    // simple verb endings
+    if(/^[a-z]+ed$/.test(w)) return true;
+    if(/^[a-z]+(s|es)$/.test(w)) return true;
+    return false;
+  }
+
+  function pickVerbIndexRobust(toks){
+    // Prefer auxiliaries / be / do / modal / have
+    for(let i=1;i<toks.length;i++){
+      const w=lw(toks[i]);
+      if(BE.has(w) || DO.has(w) || MODAL.has(w) || HAVE.has(w)) return i;
+    }
+    // Then verb-like heuristics
+    for(let i=1;i<toks.length;i++){
+      if(isFiniteVerbLike(toks[i], toks[i-1])) return i;
+    }
+    // fallback
+    return Math.min(1, Math.max(0, toks.length-1));
+  }
+
+  function consumeNPShort(toks, start){
+    const out=[];
+    let i=start;
+    if(i>=toks.length) return {np:out,next:i};
+    let w=lw(toks[i]);
+    if(SUBJ_PRON.has(w)) return {np:[toks[i]], next:i+1};
+    if(DET.has(w)){
+      out.push(toks[i]); i++;
+      if(i<toks.length){ out.push(toks[i]); i++; }
+      return {np:out,next:i};
+    }
+    return {np:[toks[i]], next:i+1};
+  }
+
+  function splitAtFirstPrep(toks){
+    for(let i=0;i<toks.length;i++) if(PREPS.has(lw(toks[i]))) return {head:toks.slice(0,i), tail:toks.slice(i)};
+    return {head:toks.slice(0), tail:[]};
+  }
+
+  function baseParse(raw){
+    const toks=trimPunc(tokenizeSafe(raw));
+    const vi=pickVerbIndexRobust(toks);
+    return {toks, vi, S: join(toks.slice(0,vi))||'—', V: String(toks[vi]||'—'), rest: toks.slice(vi+1)};
+  }
+
+  // WH + do + (not) + NP + V
+  function repairWhQuestion(p){
+    const toks=p.toks||[];
+    if(toks.length<4) return p;
+    const wh=lw(toks[0]);
+    const aux=lw(toks[1]);
+    if(!WH_ADV.has(wh) || !DO.has(aux)) return p;
+    let i=2, neg=false;
+    if(lw(toks[i])==='not'){ neg=true; i++; }
+    const subj=consumeNPShort(toks,i);
+    if(subj.next < toks.length){
+      p.S = join(subj.np);
+      p.V = toks[subj.next];
+      const rest=toks.slice(subj.next+1);
+      p.rest = [toks[0]].concat(neg?['not']:[]).concat(rest);
+    }
+    return p;
+  }
+
+  // do + (not) + NP + V
+  function repairDoQuestion(p){
+    const toks=p.toks||[];
+    if(toks.length<3) return p;
+    const first=lw(toks[0]);
+    if(!DO.has(first)) return p;
+    let i=1, neg=false;
+    if(lw(toks[i])==='not'){ neg=true; i++; }
+    const subj=consumeNPShort(toks,i);
+    if(subj.next < toks.length){
+      p.S = join(subj.np);
+      p.V = toks[subj.next];
+      const rest=toks.slice(subj.next+1);
+      p.rest = (neg?['not']:[]).concat(rest);
+    }
+    return p;
+  }
+
+  // declarative do-neg fold (does not want)
+  function foldDoNeg(p){
+    const v=lw(p.V);
+    if(!DO.has(v)) return p;
+    if(p.rest.length>=2 && lw(p.rest[0])==='not'){
+      p.V = p.V + ' ' + p.rest[0] + ' ' + p.rest[1];
+      p.rest = p.rest.slice(2);
+    }
+    return p;
+  }
+
+  // be going to fold
+  function foldBeGoingTo(p){
+    const v=lw(p.V);
+    if(!BE.has(v)) return p;
+    if(p.rest.length>=3 && lw(p.rest[0])==='going' && lw(p.rest[1])==='to'){
+      p.V = p.V + ' ' + p.rest[0] + ' ' + p.rest[1] + ' ' + p.rest[2];
+      p.rest = p.rest.slice(3);
+    }
+    return p;
+  }
+
+  function mainVerbFromVPhrase(V){
+    const parts=String(V||'').trim().split(/\s+/);
+    return lw(parts[parts.length-1]||'');
+  }
+
+  function isToInfObject(mainV, rest){
+    return TO_INF_OBJ.has(lw(mainV)) && rest && rest.length && lw(rest[0])==='to';
+  }
+
+  function isDirAdvAfterMotion(mainV, tok){
+    return MOTION_V.has(lw(mainV)) && DIR_ADV.has(lw(tok));
+  }
+
+  function parseForHints(raw){
+    let p=baseParse(raw);
+    p=repairWhQuestion(p);
+    p=repairDoQuestion(p);
+    p=foldDoNeg(p);
+    p=foldBeGoingTo(p);
+    return p;
+  }
+
+  window.inferPatternFromSentence = function(raw){
+    const p=parseForHints(raw);
+    const mainV=mainVerbFromVPhrase(p.V);
+    const r=p.rest||[];
+
+    // SVC: be/link + (not) + adjective/noun OR more/less + adjective
+    if(BE.has(mainV) || LINKLIKE.has(mainV)){
+      let idx=0;
+      if(lw(r[0]||'')==='not') idx=1;
+      const first=lw(r[idx]||'');
+      const second=lw(r[idx+1]||'');
+      if(first && (isAdjLike(first) || DET.has(first))) return {guess:'2', verb:mainV, why:'be/link + (not) + C'};
+      if(MORELESS.has(first) && second && isAdjLike(second)) return {guess:'2', verb:mainV, why:'be/link + (not) + more/less + adj'};
+    }
+
+    if(isToInfObject(mainV, r)) return {guess:'3', verb:mainV, why:'to-inf as object'};
+    if(isDirAdvAfterMotion(mainV, lw(r[0]||''))) return {guess:'1', verb:mainV, why:'motion + direction adv'};
+
+    let start=0;
+    let a1=lw(r[0]||'');
+    if(a1==='not'){ start=1; a1=lw(r[1]||''); }
+    if(a1 && (PREPS.has(a1) || isAdvLike(a1))) return {guess:'1', verb:mainV, why:'prep/adv after V'};
+
+    if(r.length>start) return {guess:'3', verb:mainV, why:'fallback SVO'};
+    return {guess:'1', verb:mainV, why:'default SV'};
+  };
+
+  // SVC complement split: C can be 1 word OR (more/less + adj)
+  function splitBeComplement(rest){
+    const r=rest.slice();
+    const M=[];
+    if(r.length && lw(r[0])==='not') M.push(r.shift());
+    const C=[];
+    if(!r.length) return {C, M};
+
+    // (1) the most/least + adj  => C="the most popular" and stop before prep (in/at/than...)
+    if(lw(r[0])==='the' && r.length>=3 && (lw(r[1])==='most' || lw(r[1])==='least') && (isAdjLike(lw(r[2])) || (/^[a-z]+$/.test(lw(r[2])) && !PREPS.has(lw(r[2]))))){
+      C.push(r.shift()); // the
+      C.push(r.shift()); // most/least
+      C.push(r.shift()); // adjective
+      // attach following noun(s) to C until a preposition starts (e.g., "the most popular student")
+      while(r.length && !PREPS.has(lw(r[0]))){
+        C.push(r.shift());
+      }
+      while(r.length) M.push(r.shift());
+      return {C, M};
+    }
+
+    // (2) the + superlative adjective (best/worst/longest...) => keep together; attach following noun(s) until prep
+    if(lw(r[0])==='the' && r.length>=2 && isAdjLike(lw(r[1]))){
+      C.push(r.shift()); // the
+      C.push(r.shift()); // best/worst/longest...
+      while(r.length && !PREPS.has(lw(r[0]))){
+        C.push(r.shift());
+      }
+      while(r.length) M.push(r.shift());
+      return {C, M};
+    }
+
+    // (3) more/less + adj
+    if(MORELESS.has(lw(r[0])) && r.length>=2 && isAdjLike(lw(r[1]))){
+      C.push(r.shift());
+      C.push(r.shift());
+      while(r.length) M.push(r.shift());
+      return {C, M};
+    }
+
+    // (4) default: one-token complement
+    C.push(r.shift());
+    while(r.length) M.push(r.shift());
+    return {C, M};
+  }
+
+  function buildHint1FromHINT2(sentence){
+    const p=parseForHints(sentence);
+    const inf=window.inferPatternFromSentence(sentence) || {guess:'1'};
+    const pat=String(inf.guess||'1');
+    const mainV=mainVerbFromVPhrase(p.V);
+
+    if(pat==='2'){
+      const s=splitBeComplement(p.rest);
+      return ['S='+p.S,'V='+p.V,'O(物)=—','C='+(join(s.C)||'—'),'M='+(join(s.M)||'—')].join('\n');
+    }
+
+    if(pat==='1') return ['S='+p.S,'V='+p.V,'O(物)=—','C=—','M='+(join(p.rest)||'—')].join('\n');
+
+    // pat==='3'
+    let rest=p.rest.slice();
+    let M=[];
+    if(rest.length && lw(rest[0])==='not') M.push(rest.shift());
+    if(isDirAdvAfterMotion(mainV, lw(rest[0]||''))){
+      return ['S='+p.S,'V='+p.V,'O(物)=—','C=—','M='+(join(M.concat(rest))||'—')].join('\n');
+    }
+    if(isToInfObject(mainV, rest)){
+      return ['S='+p.S,'V='+p.V,'O(物)='+(join(rest)||'—'),'C=—','M='+(join(M)||'—')].join('\n');
+    }
+    const sp=splitAtFirstPrep(rest);
+    return ['S='+p.S,'V='+p.V,'O(物)='+(join(sp.head)||'—'),'C=—','M='+(join(M.concat(sp.tail))||'—')].join('\n');
+  }
+
+  // HINT3 dedupe + filter by correct pattern
+  function normKey(s){
+    s = normalizeContractions(s);
+    s = s.toLowerCase();
+    s = s.replace(/[“”]/g,'"');
+    s = s.replace(/[^a-z0-9\s]/g,' ');
+    s = s.replace(/\s+/g,' ').trim();
+    return s;
+  }
+
+  function buildHint3(it){
+    const allArr=(it && it.targets && it.targets.length) ? it.targets : [];
+    if(!allArr.length) return 'HINT 3（正解例まとめ）: ';
+
+    const correct = String(it.pattern||'');
+    const seen = new Set();
+    const rows = [];
+
+    for(let i=0;i<allArr.length;i++){
+      const s=String(allArr[i]||'');
+      const key=normKey(s);
+      if(!key || seen.has(key)) continue;
+      seen.add(key);
+      const inf=window.inferPatternFromSentence(s);
+      const pat=String((inf&&inf.guess) || correct || '');
+      rows.push({s, pat});
+    }
+
+    let filtered = rows;
+    if(correct){
+      const keep = rows.filter(r=>String(r.pat)===String(correct));
+      if(keep.length) filtered = keep;
+    }
+
+    const parts = filtered.map(r=> r.s + ' ：' + (typeof patternLabel==='function' ? patternLabel(String(r.pat)) : String(r.pat)) );
+    const header = 'HINT 3（正解例まとめ）: ' + parts.join(' / ');
+    const patLine = '正解の文型：' + (typeof patternLabel==='function' ? patternLabel(String(correct)) : String(correct));
+    return header + '\n' + patLine;
+  }
+
+  function newShowHint(){
+    const it=window.pool && window.pool[window.idx];
+    if(!it) return;
+    window.hintLevel=Math.min(3,(window.hintLevel||0)+1);
+    const tgt=(it.targets && it.targets.length) ? it.targets[0] : '';
+
+    if(window.hintLevel===1){
+      window.els.statusMsg.textContent = 'HINT 1（S/V/O/C/M）:\n' + buildHint1FromHINT2(tgt);
+      window.els.explain.classList.remove('show');
+    } else if(window.hintLevel===2){
+      window.els.statusMsg.textContent = 'HINT 2（正解）: ' + tgt;
+      window.els.explain.classList.remove('show');
+    } else {
+      window.els.statusMsg.textContent = buildHint3(it);
+      window.els.explain.classList.remove('show');
+    }
+  }
+
+  function replaceHintButton(){
+    const btn=document.getElementById('btnHint');
+    if(!btn || !btn.parentNode) return;
+    const clone=btn.cloneNode(true);
+    btn.parentNode.replaceChild(clone, btn);
+    clone.addEventListener('click', newShowHint);
+  }
+
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', replaceHintButton);
+  else replaceHintButton();
+})();
+</script>
 </body></html>
