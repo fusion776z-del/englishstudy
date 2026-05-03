@@ -2047,7 +2047,7 @@ try{
 
 
 <script>
-/* === HINT2→HINT1 SVOCM OVERRIDE v33 (比較: better/most + SVC & 主語2語のbe文を崩さない) ===
+/* === HINT2→HINT1 SVOCM OVERRIDE v35 (比較: better/most + SVC & 主語2語のbe文を崩さない) ===
   FIX:
     - This restaurant is better than the one near my house. が S=This / V=restaurant になる
       （動詞位置検出が早すぎて名詞をV扱いしていた）
@@ -2058,6 +2058,9 @@ try{
     2) be/link + (not) + 形容詞/名詞補語 + 比較（better/best含む） をSVC
     3) more/less + adj を補語C=2語で取る
     4) HINT3：重複除去＋正解文型以外除外（v31）を維持
+
+  NEW:
+    - She is the most popular in her class. → C=the most popular / M=in her class
 */
 (function(){
   const PREPS = new Set(['at','in','on','to','for','from','with','by','about','of','into','onto','over','under','after','before','between','among','during','without','against','around','because','than']);
@@ -2288,12 +2291,41 @@ try{
     if(r.length && lw(r[0])==='not') M.push(r.shift());
     const C=[];
     if(!r.length) return {C, M};
+
+    // (1) the most/least + adj  => C="the most popular" and stop before prep (in/at/than...)
+    if(lw(r[0])==='the' && r.length>=3 && (lw(r[1])==='most' || lw(r[1])==='least') && (isAdjLike(lw(r[2])) || (/^[a-z]+$/.test(lw(r[2])) && !PREPS.has(lw(r[2]))))){
+      C.push(r.shift()); // the
+      C.push(r.shift()); // most/least
+      C.push(r.shift()); // adjective
+      // attach following noun(s) to C until a preposition starts (e.g., "the most popular student")
+      while(r.length && !PREPS.has(lw(r[0]))){
+        C.push(r.shift());
+      }
+      while(r.length) M.push(r.shift());
+      return {C, M};
+    }
+
+    // (2) the + superlative adjective (best/worst/longest...) => keep together; attach following noun(s) until prep
+    if(lw(r[0])==='the' && r.length>=2 && isAdjLike(lw(r[1]))){
+      C.push(r.shift()); // the
+      C.push(r.shift()); // best/worst/longest...
+      while(r.length && !PREPS.has(lw(r[0]))){
+        C.push(r.shift());
+      }
+      while(r.length) M.push(r.shift());
+      return {C, M};
+    }
+
+    // (3) more/less + adj
     if(MORELESS.has(lw(r[0])) && r.length>=2 && isAdjLike(lw(r[1]))){
       C.push(r.shift());
       C.push(r.shift());
-    } else {
-      C.push(r.shift());
+      while(r.length) M.push(r.shift());
+      return {C, M};
     }
+
+    // (4) default: one-token complement
+    C.push(r.shift());
     while(r.length) M.push(r.shift());
     return {C, M};
   }
