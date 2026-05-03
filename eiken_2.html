@@ -1289,6 +1289,7 @@ try{
     for(var i=1;i<tokens.length;i++){
       var w=lower(tokens[i]||'');
       if(/ing$/.test(w) && DET[lower(tokens[i-1]||'')] && i+1<tokens.length && isFiniteVerbLike(tokens[i+1])) continue;
+  if(/^[a-z]+(s|es|ied)$/.test(w) && DET[lower(tokens[i-1]||'')] && i+1<tokens.length && isFiniteVerbLike(tokens[i+1])) continue;
       if(isFiniteVerbLike(tokens[i])) return i;
     }
     var v = pickVerb(tokens.slice(1)) || pickVerb(tokens) || '';
