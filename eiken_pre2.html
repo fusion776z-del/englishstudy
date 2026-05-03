@@ -2042,16 +2042,29 @@ try{
 
 
 
+
+
 <script>
-/* === HINT2→HINT1 SVOCM OVERRIDE v11 (A方針 + HINT3誤判定修正) ===
-   FIX:
-     - "We will have to leave early." が HINT3で SVO になる誤判定を修正
-   原因:
-     - have to 折りたたみ後の "直後語" を見ず、元トークン(t1=have)で判定していた
-   新ルール:
-     - 文型推定は「折りたたみ後の rest[0]」を優先
-     - have to の場合、mainVerb は V句の最後（leave）として扱う
-     - rest[0] が副詞(early等)なら SV(第1) とし、Oに入れない
+/* === HINT2→HINT1 SVOCM OVERRIDE v22 (do否定 + want to-V をO扱い) ===
+  USER RULE:
+   - She does not want to join the club.
+     S=She
+     V=does not want
+     O=to join the club (to不定詞の名詞句)
+     M=—
+
+  実装:
+   1) do/does/did + not + 動詞 を V句に折りたたむ（V="does not want"）
+      ※既存の「do疑問はV=本動詞」方針は維持（疑問は別処理）
+   2) want/hope/plan/decide/try など + to-V で始まる場合、to不定詞句を O として扱う
+      （"to" は前置詞分割の対象外）
+
+  KEEP:
+   - WH疑問補正 / do疑問補正
+   - 完了形 not/副詞挟み fold
+   - news 誤認修正
+   - modal fold / have to fold
+   - want O to-V (=SVOC, C) は従来通り（O が先にある場合だけ）
 */
 (function(){
   var RULES = {
@@ -2059,19 +2072,38 @@ try{
     BE: {am:1,is:1,are:1,was:1,were:1,be:1,been:1,being:1},
     DET: {a:1,an:1,the:1,this:1,that:1,these:1,those:1,my:1,your:1,his:1,her:1,our:1,their:1,some:1,any:1,no:1,each:1,every:1},
     PRON_OBJ: {me:1,him:1,her:1,us:1,them:1,you:1,it:1},
+    WH: {who:1,which:1,that:1,where:1,when:1,why:1,how:1,what:1,whom:1},
+    WH_ADV: {where:1,when:1,why:1,how:1},
     AUX: {am:1,is:1,are:1,was:1,were:1,be:1,been:1,being:1,do:1,does:1,did:1,have:1,has:1,had:1,can:1,will:1,shall:1,may:1,might:1,must:1,should:1,could:1,would:1},
+    DO: {do:1,does:1,did:1},
     LINKLIKE: {become:1,became:1,get:1,got:1,turn:1,turned:1,grow:1,grew:1,go:1,went:1,fall:1,fell:1,fallen:1,seem:1,seems:1,look:1,looks:1,feel:1,feels:1,remain:1,remains:1,stay:1,stays:1},
-    COMP_ADJ: {open:1,closed:1,asleep:1,awake:1,alone:1,afraid:1,ready:1,sure:1,late:1,early:1,busy:1,happy:1,sad:1,angry:1,tired:1,clean:1,important:1,boring:1,interesting:1},
-    ADV: {early:1,late:1,today:1,tomorrow:1,yesterday:1,now:1,soon:1,here:1,there:1,always:1,often:1,sometimes:1,usually:1,never:1,already:1,just:1,still:1,again:1},
-    DITRANS: {give:1,gave:1,send:1,sent:1,show:1,showed:1,teach:1,taught:1,tell:1,told:1,lend:1,lent:1,buy:1,bought:1,make:1,made:1,cook:1,cooked:1,get:1,got:1,find:1,found:1,offer:1,offered:1,bring:1,brought:1,write:1,wrote:1},
+    COMP_ADJ: {open:1,closed:1,asleep:1,awake:1,alone:1,afraid:1,ready:1,sure:1,late:1,early:1,busy:1,happy:1,sad:1,angry:1,tired:1,clean:1,important:1,boring:1,interesting:1,quiet:1},
+    ADV: {not:1,yet:1,ever:1,never:1,already:1,just:1,still:1,again:1,early:1,late:1,today:1,tomorrow:1,yesterday:1,now:1,soon:1,here:1,there:1,always:1,often:1,sometimes:1,usually:1,why:1,when:1,where:1,how:1,tonight:1},
+    DITRANS: {give:1,gave:1,send:1,sent:1,show:1,showed:1,teach:1,taught:1,tell:1,told:1,lend:1,lent:1,buy:1,bought:1,make:1,made:1,cook:1,cooked:1,get:1,got:1,find:1,found:1,offer:1,offered:1,bring:1,brought:1,write:1,wrote:1,read:1,pass:1,promise:1,post:1,sell:1},
     SVOC: {make:1,made:1,call:1,called:1,name:1,named:1,keep:1,kept:1,find:1,found:1,consider:1,considered:1,elect:1,elected:1,leave:1,left:1},
-    IRR: {went:1,came:1,saw:1,made:1,gave:1,took:1,found:1,kept:1,told:1,sent:1,taught:1,became:1,began:1,left:1,felt:1,got:1,knew:1,thought:1,said:1,held:1,brought:1,wrote:1,read:1,spoke:1,drove:1,ran:1,built:1,chose:1,ate:1,drank:1,slept:1,met:1,fell:1,grew:1,fallen:1,lent:1,bought:1},
+    SVOC_TO: {want:1,wants:1,wanted:1,tell:1,tells:1,told:1,ask:1,asks:1,asked:1,need:1,needs:1,needed:1,expect:1,expects:1,expected:1,allow:1,allows:1,allowed:1},
+    TO_INF_OBJ: {want:1,wants:1,wanted:1,hope:1,hopes:1,hoped:1,plan:1,plans:1,planned:1,decide:1,decides:1,decided:1,try:1,tries:1,tried:1,need:1,needs:1,needed:1,promise:1,promises:1,promised:1},
+    IRR: {went:1,came:1,saw:1,made:1,gave:1,took:1,found:1,kept:1,told:1,sent:1,taught:1,became:1,began:1,left:1,felt:1,got:1,knew:1,thought:1,said:1,held:1,brought:1,wrote:1,read:1,spoke:1,drove:1,ran:1,built:1,chose:1,ate:1,drank:1,slept:1,met:1,fell:1,grew:1,fallen:1,lent:1,bought:1,lived:1},
     HAVE: {have:1,has:1,had:1},
-    MODAL: {will:1,would:1,can:1,could:1,shall:1,should:1,may:1,might:1,must:1}
+    MODAL: {will:1,would:1,can:1,could:1,shall:1,should:1,may:1,might:1,must:1},
+    NOUN_ENDS_S: {news:1,series:1,means:1,physics:1,maths:1}
   };
 
   function lw(x){ return (typeof lower==='function') ? lower(x) : String(x||'').toLowerCase(); }
-  function tokenizeSafe(raw){ return (typeof tokenize==='function') ? tokenize(raw||'') : String(raw||'').trim().split(/\s+/); }
+  function normalizeContractions(s){
+    s=String(s||'');
+    s=s.replace(/\b([A-Za-z]+)'ve\b/g, '$1 have');
+    s=s.replace(/\bwon't\b/gi,'will not');
+    s=s.replace(/\bcan't\b/gi,'cannot');
+    s=s.replace(/\bI'm\b/gi,'I am');
+    s=s.replace(/\b(we|they|you)\s*'re\b/gi, '$1 are');
+    s=s.replace(/\b(he|she|it)\s*'s\b/gi, '$1 is');
+    return s;
+  }
+  function tokenizeSafe(raw){
+    raw = normalizeContractions(raw);
+    return (typeof tokenize==='function') ? tokenize(raw||'') : String(raw||'').trim().split(/\s+/);
+  }
   function trimPunc(toks){
     if(typeof isWord!=='function') return toks;
     while(toks.length && !isWord(toks[toks.length-1])) toks.pop();
@@ -2080,7 +2112,6 @@ try{
   function join(toks){ return toks && toks.length ? toks.join(' ').trim() : ''; }
 
   function isAdvLike(w){ w=lw(w); return !!w && (RULES.ADV[w] || /ly$/.test(w)); }
-
   function isAdjLike(w){
     w=lw(w);
     if(!w) return false;
@@ -2090,13 +2121,21 @@ try{
     if(/ed$/.test(w)) return true;
     return false;
   }
-
-  function isFiniteVerbLike(tok){
-    var w=lw(tok);
+  function isPastPartLike(w){
+    w=lw(w);
     if(!w) return false;
-    if(RULES.DET[w] || RULES.PRON_OBJ[w] || w==='i' || w==='he' || w==='she' || w==='we' || w==='they') return false;
+    if(/ed$/.test(w)) return true;
+    return !!({gone:1,been:1,done:1,seen:1,known:1,taken:1,given:1,made:1,found:1,taught:1,told:1,sent:1,kept:1,left:1,felt:1,got:1,read:1,spoken:1,driven:1,run:1,built:1,chosen:1,eaten:1,drunk:1,slept:1,met:1,fallen:1,lived:1,lent:1,bought:1,written:1,brought:1,finished:1}.hasOwnProperty(w));
+  }
+
+  function isFiniteVerbLike(tok, prevTok){
+    var w=lw(tok), prev=lw(prevTok);
+    if(!w) return false;
+    if(RULES.NOUN_ENDS_S[w]) return false;
+    if(RULES.DET[w] || RULES.PRON_OBJ[w] || RULES.WH[w] || w==='i' || w==='he' || w==='she' || w==='we' || w==='they') return false;
     if(RULES.AUX[w]) return true;
     if(RULES.IRR[w]) return true;
+    if(/^[a-z]+(s|es)$/.test(w) && RULES.DET[prev]) return false;
     if(/^[a-z]+(s|es|ied)$/.test(w)) return true;
     if(/^[a-z]+ed$/.test(w)) return true;
     return false;
@@ -2105,12 +2144,9 @@ try{
   function pickVerbIndexRobust(toks){
     for(var i=1;i<toks.length;i++){
       var w=lw(toks[i]);
-      if(/ing$/.test(w) && RULES.DET[lw(toks[i-1])] && i+1<toks.length && isFiniteVerbLike(toks[i+1])) continue;
-      if(isFiniteVerbLike(toks[i])) return i;
-    }
-    if(typeof pickVerb==='function'){
-      var v=pickVerb(toks.slice(1)); if(!v) v=pickVerb(toks);
-      if(v){ var lv=lw(v); for(var j=0;j<toks.length;j++) if(lw(toks[j])===lv) return j; }
+      if(RULES.WH[w] || RULES.NOUN_ENDS_S[w]) continue;
+      if(/ing$/.test(w) && RULES.DET[lw(toks[i-1])] && i+1<toks.length && isFiniteVerbLike(toks[i+1], toks[i])) continue;
+      if(isFiniteVerbLike(toks[i], toks[i-1])) return i;
     }
     return Math.min(1, Math.max(0, toks.length-1));
   }
@@ -2134,46 +2170,107 @@ try{
     return {toks:toks, vi:vi, S:join(toks.slice(0,vi))||'—', V:String(toks[vi]||'—'), rest:toks.slice(vi+1)};
   }
 
-  function repairShiftBe(p){
-    if(!isFiniteVerbLike(p.V) && p.rest.length && RULES.BE[lw(p.rest[0])]){
-      p.S = (p.S==='—' ? p.V : (p.S+' '+p.V)).trim();
-      p.V = p.rest[0];
-      p.rest = p.rest.slice(1);
+  // Yes/No inversion normalization (v19): DO疑問はV=本動詞
+  function repairInversion(p){
+    var toks=p.toks||[];
+    if(toks.length<2) return p;
+    var first=lw(toks[0]), second=lw(toks[1]);
+    if(!RULES.AUX[first] && !RULES.MODAL[first] && !RULES.HAVE[first] && !RULES.DO[first]) return p;
+    if(RULES.WH[second]) return p;
+    if(RULES.DO[first] && toks.length>=3){
+      p.S=toks[1];
+      p.V=toks[2];
+      p.rest=toks.slice(3);
+      p.vi=0;
+      return p;
+    }
+    p.S=toks[1];
+    p.V=toks[0];
+    p.rest=toks.slice(2);
+    p.vi=0;
+    return p;
+  }
+
+  // WH-ADV question normalization (v19): DO疑問はV=本動詞
+  function repairWhQuestion(p){
+    var toks=p.toks||[];
+    if(toks.length<3) return p;
+    var first=lw(toks[0]), second=lw(toks[1]);
+    if(!RULES.WH_ADV[first]) return p;
+    if(!(RULES.AUX[second] || RULES.DO[second] || RULES.MODAL[second] || RULES.HAVE[second] || RULES.BE[second])) return p;
+    if(RULES.DO[second] && toks.length>=4){
+      p.S=toks[2];
+      p.V=toks[3];
+      p.rest=[toks[0]].concat(toks.slice(4));
+      p.vi=0;
+      return p;
+    }
+    p.S=toks[2];
+    p.V=toks[1];
+    p.rest=[toks[0]].concat(toks.slice(3));
+    p.vi=0;
+    return p;
+  }
+
+  // NEW: do/does/did + not + V  => V="does not want" (否定のdo-support)
+  function foldDoNeg(p){
+    var v=lw(p.V);
+    if(!RULES.DO[v]) return p;
+    if(p.rest.length>=2 && lw(p.rest[0])==='not'){
+      // next should be base verb
+      var mv=p.rest[1];
+      p.V = p.V + ' ' + p.rest[0] + ' ' + mv;
+      p.rest = p.rest.slice(2);
+      return p;
     }
     return p;
   }
 
-  function foldModalInf(p){
+  function foldHaveTo(p){
     var v=lw(p.V);
-    if(RULES.HAVE[v] && lw(p.rest[0])==='to' && p.rest.length>=2 && /^[a-z]+$/.test(lw(p.rest[1]))){
-      p.V = p.V + ' ' + p.rest[0] + ' ' + p.rest[1];
-      p.rest = p.rest.slice(2);
-      return p;
-    }
-    if(RULES.MODAL[v] && RULES.HAVE[lw(p.rest[0])] && lw(p.rest[1])==='to' && p.rest.length>=3 && /^[a-z]+$/.test(lw(p.rest[2]))){
-      p.V = p.V + ' ' + p.rest[0] + ' ' + p.rest[1] + ' ' + p.rest[2];
-      p.rest = p.rest.slice(3);
-      return p;
-    }
+    if(RULES.HAVE[v] && lw(p.rest[0])==='to' && p.rest.length>=2){ p.V=p.V+' '+p.rest[0]+' '+p.rest[1]; p.rest=p.rest.slice(2); return p; }
+    if(RULES.MODAL[v] && p.rest.length>=3 && RULES.HAVE[lw(p.rest[0])] && lw(p.rest[1])==='to'){ p.V=p.V+' '+p.rest[0]+' '+p.rest[1]+' '+p.rest[2]; p.rest=p.rest.slice(3); return p; }
+    return p;
+  }
+
+  function foldPerfect(p){
+    var v=lw(p.V);
+    if(RULES.HAVE[v] && p.rest.length && isPastPartLike(p.rest[0])){ p.V=p.V+' '+p.rest[0]; p.rest=p.rest.slice(1); return p; }
+    if(RULES.HAVE[v] && p.rest.length>=2 && lw(p.rest[0])==='not' && isPastPartLike(p.rest[1])){ var neg=p.rest[0]; p.V=p.V+' '+p.rest[1]; p.rest=[neg].concat(p.rest.slice(2)); return p; }
+    if(RULES.HAVE[v] && p.rest.length>=2 && isAdvLike(p.rest[0]) && isPastPartLike(p.rest[1])){ var adv=p.rest[0]; p.V=p.V+' '+p.rest[1]; p.rest=[adv].concat(p.rest.slice(2)); return p; }
+    if(RULES.HAVE[v] && p.rest.length>=3 && lw(p.rest[0])==='not' && isAdvLike(p.rest[1]) && isPastPartLike(p.rest[2])){ var neg2=p.rest[0], adv2=p.rest[1]; p.V=p.V+' '+p.rest[2]; p.rest=[neg2,adv2].concat(p.rest.slice(3)); return p; }
+    if(RULES.MODAL[v] && p.rest.length>=2 && RULES.HAVE[lw(p.rest[0])] && isPastPartLike(p.rest[1])){ p.V=p.V+' '+p.rest[0]+' '+p.rest[1]; p.rest=p.rest.slice(2); return p; }
+    if(RULES.MODAL[v] && p.rest.length>=3 && RULES.HAVE[lw(p.rest[0])] && lw(p.rest[1])==='not' && isPastPartLike(p.rest[2])){ var neg3=p.rest[1]; p.V=p.V+' '+p.rest[0]+' '+p.rest[2]; p.rest=[neg3].concat(p.rest.slice(3)); return p; }
+    if(RULES.MODAL[v] && p.rest.length>=3 && RULES.HAVE[lw(p.rest[0])] && isAdvLike(p.rest[1]) && isPastPartLike(p.rest[2])){ var adv3=p.rest[1]; p.V=p.V+' '+p.rest[0]+' '+p.rest[2]; p.rest=[adv3].concat(p.rest.slice(3)); return p; }
+    if(RULES.MODAL[v] && p.rest.length>=4 && RULES.HAVE[lw(p.rest[0])] && lw(p.rest[1])==='not' && isAdvLike(p.rest[2]) && isPastPartLike(p.rest[3])){ var neg4=p.rest[1], adv4=p.rest[2]; p.V=p.V+' '+p.rest[0]+' '+p.rest[3]; p.rest=[neg4,adv4].concat(p.rest.slice(4)); return p; }
+    return p;
+  }
+
+  function foldModalVerb(p){
+    var v=lw(p.V);
+    if(!RULES.MODAL[v] || !p.rest.length) return p;
+    var nxt=lw(p.rest[0]);
+    if(nxt==='have'||nxt==='has'||nxt==='had'||nxt==='be'||nxt==='been'||nxt==='being') return p;
+    if(RULES.WH[nxt]||RULES.PREPS[nxt]||RULES.DET[nxt]||RULES.PRON_OBJ[nxt]||isAdvLike(nxt)) return p;
+    p.V=p.V+' '+p.rest[0];
+    p.rest=p.rest.slice(1);
     return p;
   }
 
   function mainVerbFromVPhrase(V){
     var parts=String(V||'').trim().split(/\s+/);
-    // have to 折りたたみ系は末尾が本動詞
-    if(parts.indexOf('to')>=0) return lw(parts[parts.length-1]||'');
-    return lw(parts[0]||'');
+    return lw(parts[parts.length-1]||'');
   }
 
+  // SVOC adjective/noun complement
   function detectSVOC(restTokens){
     var r=restTokens.slice();
     if(!r.length) return null;
     var o=[];
-    if(RULES.PRON_OBJ[lw(r[0])] && lw(r[0])!=='it'){
-      o.push(r.shift());
-    } else {
+    if(RULES.PRON_OBJ[lw(r[0])] && lw(r[0])!=='it') o.push(r.shift());
+    else {
       if(RULES.DET[lw(r[0])] && r.length>=2){ o.push(r.shift()); o.push(r.shift()); }
-      else { o.push(r.shift()); }
+      else o.push(r.shift());
     }
     if(!r.length) return null;
     var sp=splitAtFirstPrep(r);
@@ -2183,72 +2280,131 @@ try{
     return {O:o, C:c, M:m};
   }
 
+  // SVOC to-inf: O + to ...
+  function detectSVOCToInf(restTokens){
+    var r=restTokens.slice();
+    if(r.length<2) return null;
+    var o=[];
+    if(RULES.PRON_OBJ[lw(r[0])]) o.push(r.shift());
+    else {
+      if(RULES.DET[lw(r[0])] && r.length>=2){ o.push(r.shift()); o.push(r.shift()); }
+      else o.push(r.shift());
+    }
+    if(!r.length || lw(r[0])!=='to') return null;
+    return {O:o, C:r, M:[]};
+  }
+
+  // NEW: to-inf object (to ... )
+  function isToInfObject(mainV, rest){
+    return !!(RULES.TO_INF_OBJ[mainV] && rest && rest.length && lw(rest[0])==='to');
+  }
+
+  function parseForHints(raw){
+    var p=baseParse(raw);
+    p=repairWhQuestion(p);
+    p=repairInversion(p);
+    p=foldDoNeg(p);
+    p=foldModalVerb(foldPerfect(foldHaveTo(p)));
+    return p;
+  }
+
+  function firstNonNeg(rest){
+    for(var i=0;i<rest.length;i++){
+      var w=lw(rest[i]);
+      if(w==='not') continue;
+      return {tok:w, idx:i};
+    }
+    return {tok:'', idx:0};
+  }
+
   window.inferPatternFromSentence = function(raw){
-    var p=foldModalInf(repairShiftBe(baseParse(raw)));
-    var after1=lw(p.rest[0]||'');
-    var after2=lw(p.rest[1]||'');
+    var p=parseForHints(raw);
     var mainV=mainVerbFromVPhrase(p.V);
 
-    // 副詞が直後ならSV
-    if(isAdvLike(after1)) return {guess:'1',verb:mainV,why:'adv after V-phrase => SV'};
+    // to不定詞目的語を優先でSVO
+    if(isToInfObject(mainV, p.rest)) return {guess:'3',verb:mainV,why:'to-inf as object'};
 
-    // SVC
-    if((RULES.BE[mainV] || RULES.LINKLIKE[mainV]) && isAdjLike(after1)) return {guess:'2',verb:mainV,why:'link/be + adj => SVC'};
+    var fn=firstNonNeg(p.rest);
+    var a1=fn.tok;
+    var a2=lw(p.rest[fn.idx+1]||'');
 
-    // SVOC
-    if(RULES.SVOC[mainV]){
-      var svoc=detectSVOC(p.rest);
-      if(svoc) return {guess:'5',verb:mainV,why:'SVOC'};
-    }
+    if(a1 && isAdvLike(a1) && a1!=='not') return {guess:'1',verb:mainV,why:'adv after V => SV'};
+    if(typeof isPrepTok==='function' && isPrepTok(a1)) return {guess:'1',verb:mainV,why:'prep after V => SV'};
+    if(RULES.PREPS[a1]) return {guess:'1',verb:mainV,why:'prep after V => SV'};
 
-    // Ditrans
+    if((RULES.BE[mainV] || RULES.LINKLIKE[mainV]) && isAdjLike(a1)) return {guess:'2',verb:mainV,why:'link/be + adj => SVC'};
+
+    if(RULES.SVOC_TO[mainV]){ var svocTo=detectSVOCToInf(p.rest); if(svocTo) return {guess:'5',verb:mainV,why:'SVOC (O + to-inf)'}; }
+    if(RULES.SVOC[mainV]){ var svoc=detectSVOC(p.rest); if(svoc) return {guess:'5',verb:mainV,why:'SVOC'}; }
+
     if(RULES.DITRANS[mainV]){
-      if(RULES.PRON_OBJ[after1]) return {guess:'4',verb:mainV,why:'SVOO'};
-      var pp=findToForAfterRest(p.rest);
-      if(pp) return {guess:'3',verb:mainV,why:'SVO + to/for'};
-      if(typeof looksNounStart==='function' && looksNounStart(after1) && looksNounStart(after2) && !(typeof isPrepTok==='function' && isPrepTok(after2))) return {guess:'4',verb:mainV,why:'SVOO guess'};
+      if(RULES.PRON_OBJ[a1]) return {guess:'4',verb:mainV,why:'SVOO'};
+      var pp=findToForAfterRest(p.rest); if(pp) return {guess:'3',verb:mainV,why:'SVO + to/for'};
+      if(typeof looksNounStart==='function' && looksNounStart(a1) && looksNounStart(a2) && !(typeof isPrepTok==='function' && isPrepTok(a2))) return {guess:'4',verb:mainV,why:'SVOO guess'};
     }
 
-    if(typeof isPrepTok==='function' && isPrepTok(after1)) return {guess:'1',verb:mainV,why:'SV'};
-    if(typeof looksNounStart==='function' && looksNounStart(after1) && !isAdvLike(after1)) return {guess:'3',verb:mainV,why:'SVO'};
-    if(!isAdvLike(after1) && (RULES.DET[after1] || RULES.PRON_OBJ[after1] || /^[a-z]+$/.test(after1))) return {guess:'3',verb:mainV,why:'noun-like => SVO'};
+    if(typeof looksNounStart==='function' && looksNounStart(a1) && !(isAdvLike(a1) && a1==='not')) return {guess:'3',verb:mainV,why:'SVO'};
+    if(a1 && a1!=='not' && (RULES.DET[a1] || RULES.PRON_OBJ[a1] || /^[a-z]+$/.test(a1))) return {guess:'3',verb:mainV,why:'fallback SVO'};
     return {guess:'1',verb:mainV,why:'default SV'};
   };
 
+  function splitNegObjectTail(rest){
+    var r=rest.slice();
+    var neg=[];
+    if(r.length && lw(r[0])==='not') neg.push(r.shift());
+    var tail=[];
+    while(r.length){
+      var last=lw(r[r.length-1]);
+      if(last==='yet' || last==='already' || last==='just' || last==='ever' || last==='never' || last==='still') tail.unshift(r.pop());
+      else break;
+    }
+    return {negTokens:neg, objTokens:r, tailTokens:tail};
+  }
+
+  // to不定詞をOとして取る（前置詞分割しない）
+  function splitObjectForSVO(p){
+    var mainV=mainVerbFromVPhrase(p.V);
+    if(isToInfObject(mainV, p.rest)) return {O:p.rest.slice(0), M:[]};
+    var sp=splitAtFirstPrep(p.rest);
+    return {O:sp.head, M:sp.tail};
+  }
+
   function buildHint1FromHINT2(sentence){
-    var p=foldModalInf(repairShiftBe(baseParse(sentence)));
+    var p=parseForHints(sentence);
     var inf=window.inferPatternFromSentence(sentence);
     var pat=String((inf&&inf.guess)||'1');
-    var after1=lw(p.rest[0]||'');
-
-    if(pat==='3' && isAdvLike(after1)) pat='1';
-
-    if(pat==='5'){
-      var svoc=detectSVOC(p.rest);
-      if(svoc) return ['S='+p.S,'V='+p.V,'O(物)='+(join(svoc.O)||'—'),'C='+(join(svoc.C)||'—'),'M='+(join(svoc.M)||'—')].join('\n');
-    }
+    var mainV=mainVerbFromVPhrase(p.V);
 
     if(pat==='1') return ['S='+p.S,'V='+p.V,'O(物)=—','C=—','M='+(join(p.rest)||'—')].join('\n');
     if(pat==='2'){
-      var sp=splitAtFirstPrep(p.rest);
-      var C=join(sp.head)||'—';
-      var M=join(sp.tail)||'—';
+      var sp=splitAtFirstPrep(p.rest); var C=join(sp.head)||'—'; var M=join(sp.tail)||'—';
       if(C!=='—' && RULES.PREPS[lw(C.split(/\s+/)[0])]){ M=(C + (M==='—'?'':(' '+M))).trim(); C='—'; }
       return ['S='+p.S,'V='+p.V,'O(物)=—','C='+C,'M='+M].join('\n');
     }
     if(pat==='3'){
-      var sp3=splitAtFirstPrep(p.rest);
-      return ['S='+p.S,'V='+p.V,'O(物)='+(join(sp3.head)||'—'),'C=—','M='+(join(sp3.tail)||'—')].join('\n');
+      // perfect negative special
+      if(p.rest.length && lw(p.rest[0])==='not' && RULES.HAVE[lw(p.V.split(/\s+/)[0])]){
+        var spn=splitNegObjectTail(p.rest);
+        return ['S='+p.S,'V='+p.V,'O(物)='+(join(spn.objTokens)||'—'),'C=—','M='+(join(spn.negTokens.concat(spn.tailTokens))||'—')].join('\n');
+      }
+      var split=splitObjectForSVO(p);
+      return ['S='+p.S,'V='+p.V,'O(物)='+(join(split.O)||'—'),'C=—','M='+(join(split.M)||'—')].join('\n');
     }
     if(pat==='4'){
       var rest=p.rest.slice();
       if(rest.length && RULES.PRON_OBJ[lw(rest[0])]){
-        var o1=rest[0];
-        rest=rest.slice(1);
+        var o1=rest[0]; rest=rest.slice(1);
         var sp4=splitAtFirstPrep(rest);
         return ['S='+p.S,'V='+p.V,'O1(人)='+o1,'O2(物)='+(join(sp4.head)||'—'),'C=—','M='+(join(sp4.tail)||'—')].join('\n');
       }
       return ['S='+p.S,'V='+p.V,'O1(人)=—','O2(物)=—','C=—','M='+(join(p.rest)||'—')].join('\n');
+    }
+    if(pat==='5'){
+      var svocTo = RULES.SVOC_TO[mainV] ? detectSVOCToInf(p.rest) : null;
+      if(svocTo) return ['S='+p.S,'V='+p.V,'O(物)='+(join(svocTo.O)||'—'),'C='+(join(svocTo.C)||'—'),'M=—'].join('\n');
+      var svoc=detectSVOC(p.rest);
+      if(svoc) return ['S='+p.S,'V='+p.V,'O(物)='+(join(svoc.O)||'—'),'C='+(join(svoc.C)||'—'),'M='+(join(svoc.M)||'—')].join('\n');
+      return ['S='+p.S,'V='+p.V,'O(物)=—','C=—','M='+(join(p.rest)||'—')].join('\n');
     }
     return ['S='+p.S,'V='+p.V,'O(物)=—','C=—','M='+(join(p.rest)||'—')].join('\n');
   }
@@ -2256,12 +2412,9 @@ try{
   function buildHint3(it){
     var allArr=(it.targets&&it.targets.length)? it.targets : [];
     if(!allArr.length) return 'HINT 3（正解例まとめ）: ';
-
     var parts=[];
     var has4=false, has3=false;
-    var svooExample=null, svoToForExample=null;
     var hasExplain=false;
-
     for(var i=0;i<allArr.length;i++){
       var s=String(allArr[i]||'');
       if(/\bexplain(ed|s)?\b/i.test(s)) hasExplain=true;
@@ -2269,48 +2422,15 @@ try{
       var pat=String((inf&&inf.guess) || (it.pattern||''));
       if(pat==='4') has4=true;
       if(pat==='3' && /\b(to|for)\b/i.test(s)) has3=true;
-      if(!svooExample && pat==='4') svooExample=s;
-      if(!svoToForExample && pat==='3' && /\b(to|for)\b/i.test(s)) svoToForExample=s;
-      // NOTE: if pat is 3 but sentence ends with adverb (early), force label 1
-      if(pat==='3'){
-        var p=foldModalInf(repairShiftBe(baseParse(s)));
-        if(isAdvLike(lw(p.rest[0]||''))) pat='1';
-      }
       parts.push(s+' ：'+(typeof patternLabel==='function'? patternLabel(pat):pat));
     }
-
     var header='HINT 3（正解例まとめ）: '+parts.join(' / ');
-    // choose overall pattern: if any example labeled 4 or 3(to/for), show alternation; else use it.pattern
     var patLine='正解の文型：'+(has4&&has3 ? 'SVOO（第4文型）⇄SVO（第3文型）' : (typeof patternLabel==='function'? patternLabel(String(it.pattern||'')) : String(it.pattern||'')));
-
-    var convLine='';
-    if(has4){
-      if(svoToForExample){
-        convLine='変換（to/for形）: '+svoToForExample;
-      } else {
-        try{
-          var p2=foldModalInf(repairShiftBe(baseParse(svooExample)));
-          var toks=p2.toks;
-          var vi=p2.vi;
-          var rest=toks.slice(vi+1);
-          var o1=rest[0];
-          if(!RULES.PRON_OBJ[lw(o1)]) throw new Error('no O1 pron');
-          var after=rest.slice(1);
-          var sp=splitAtFirstPrep(after);
-          var o2=join(sp.head);
-          var gen=(p2.S+' '+p2.V+' '+o2+' to '+o1).replace(/\s+/g,' ').trim();
-          if(!/[\.!?]$/.test(gen)) gen += '.';
-          convLine='変換（自動to形）: '+gen;
-        } catch(e){ convLine=''; }
-      }
-    }
-
     var noteLine='';
     if(hasExplain){
       noteLine='ただし、explain は「人」を直接目的語に取れない動詞なので、SVOO（第4文型）にはなれません。（例：× explain me the rule / ○ explain the rule to me）';
     }
-
-    return header+'\n'+patLine+(convLine?('\n'+convLine):'')+(noteLine?('\n'+noteLine):'');
+    return header+'\n'+patLine+(noteLine?('\n'+noteLine):'');
   }
 
   function newShowHint(){
