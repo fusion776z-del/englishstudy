@@ -2043,19 +2043,26 @@ try{
 
 
 <script>
-/* === HINT2→HINT1 SVOCM OVERRIDE v8 (A方針 + HINT3 変換/ラベル + explain注意書き) ===
-   追加要望:
-     HINT3に「explain は人を直接目的語に取れないのでSVOOにならない」注意書きを自動追加。
+/* === HINT2→HINT1 SVOCM OVERRIDE v11 (A方針 + HINT3誤判定修正) ===
+   FIX:
+     - "We will have to leave early." が HINT3で SVO になる誤判定を修正
+   原因:
+     - have to 折りたたみ後の "直後語" を見ず、元トークン(t1=have)で判定していた
+   新ルール:
+     - 文型推定は「折りたたみ後の rest[0]」を優先
+     - have to の場合、mainVerb は V句の最後（leave）として扱う
+     - rest[0] が副詞(early等)なら SV(第1) とし、Oに入れない
 */
 (function(){
   var RULES = {
     PREPS: {at:1,in:1,on:1,to:1,for:1,from:1,with:1,by:1,about:1,of:1,into:1,onto:1,over:1,under:1,after:1,before:1,between:1,among:1,during:1,without:1,against:1,around:1,because:1},
     BE: {am:1,is:1,are:1,was:1,were:1,be:1,been:1,being:1},
     DET: {a:1,an:1,the:1,this:1,that:1,these:1,those:1,my:1,your:1,his:1,her:1,our:1,their:1,some:1,any:1,no:1,each:1,every:1},
-    PRON_OBJ: {me:1,him:1,her:1,us:1,them:1,you:1},
+    PRON_OBJ: {me:1,him:1,her:1,us:1,them:1,you:1,it:1},
     AUX: {am:1,is:1,are:1,was:1,were:1,be:1,been:1,being:1,do:1,does:1,did:1,have:1,has:1,had:1,can:1,will:1,shall:1,may:1,might:1,must:1,should:1,could:1,would:1},
     LINKLIKE: {become:1,became:1,get:1,got:1,turn:1,turned:1,grow:1,grew:1,go:1,went:1,fall:1,fell:1,fallen:1,seem:1,seems:1,look:1,looks:1,feel:1,feels:1,remain:1,remains:1,stay:1,stays:1},
-    COMP_ADJ: {open:1,closed:1,asleep:1,awake:1,alone:1,afraid:1,ready:1,sure:1,late:1,early:1,busy:1,happy:1,sad:1,angry:1,tired:1,clean:1,important:1},
+    COMP_ADJ: {open:1,closed:1,asleep:1,awake:1,alone:1,afraid:1,ready:1,sure:1,late:1,early:1,busy:1,happy:1,sad:1,angry:1,tired:1,clean:1,important:1,boring:1,interesting:1},
+    ADV: {early:1,late:1,today:1,tomorrow:1,yesterday:1,now:1,soon:1,here:1,there:1,always:1,often:1,sometimes:1,usually:1,never:1,already:1,just:1,still:1,again:1},
     DITRANS: {give:1,gave:1,send:1,sent:1,show:1,showed:1,teach:1,taught:1,tell:1,told:1,lend:1,lent:1,buy:1,bought:1,make:1,made:1,cook:1,cooked:1,get:1,got:1,find:1,found:1,offer:1,offered:1,bring:1,brought:1,write:1,wrote:1},
     SVOC: {make:1,made:1,call:1,called:1,name:1,named:1,keep:1,kept:1,find:1,found:1,consider:1,considered:1,elect:1,elected:1,leave:1,left:1},
     IRR: {went:1,came:1,saw:1,made:1,gave:1,took:1,found:1,kept:1,told:1,sent:1,taught:1,became:1,began:1,left:1,felt:1,got:1,knew:1,thought:1,said:1,held:1,brought:1,wrote:1,read:1,spoke:1,drove:1,ran:1,built:1,chose:1,ate:1,drank:1,slept:1,met:1,fell:1,grew:1,fallen:1,lent:1,bought:1},
@@ -2072,6 +2079,8 @@ try{
   }
   function join(toks){ return toks && toks.length ? toks.join(' ').trim() : ''; }
 
+  function isAdvLike(w){ w=lw(w); return !!w && (RULES.ADV[w] || /ly$/.test(w)); }
+
   function isAdjLike(w){
     w=lw(w);
     if(!w) return false;
@@ -2085,7 +2094,7 @@ try{
   function isFiniteVerbLike(tok){
     var w=lw(tok);
     if(!w) return false;
-    if(RULES.DET[w] || RULES.PRON_OBJ[w] || w==='i' || w==='he' || w==='she' || w==='we' || w==='they' || w==='it') return false;
+    if(RULES.DET[w] || RULES.PRON_OBJ[w] || w==='i' || w==='he' || w==='she' || w==='we' || w==='they') return false;
     if(RULES.AUX[w]) return true;
     if(RULES.IRR[w]) return true;
     if(/^[a-z]+(s|es|ied)$/.test(w)) return true;
@@ -2111,9 +2120,9 @@ try{
     return {head:toks.slice(0), tail:[]};
   }
 
-  function findToForAfter(toks, start){
-    for(var i=start;i<toks.length;i++){
-      var t=lw(toks[i]);
+  function findToForAfterRest(rest){
+    for(var i=0;i<rest.length;i++){
+      var t=lw(rest[i]);
       if(t==='to' || t==='for') return {prep:t,index:i};
     }
     return null;
@@ -2149,43 +2158,77 @@ try{
     return p;
   }
 
+  function mainVerbFromVPhrase(V){
+    var parts=String(V||'').trim().split(/\s+/);
+    // have to 折りたたみ系は末尾が本動詞
+    if(parts.indexOf('to')>=0) return lw(parts[parts.length-1]||'');
+    return lw(parts[0]||'');
+  }
+
+  function detectSVOC(restTokens){
+    var r=restTokens.slice();
+    if(!r.length) return null;
+    var o=[];
+    if(RULES.PRON_OBJ[lw(r[0])] && lw(r[0])!=='it'){
+      o.push(r.shift());
+    } else {
+      if(RULES.DET[lw(r[0])] && r.length>=2){ o.push(r.shift()); o.push(r.shift()); }
+      else { o.push(r.shift()); }
+    }
+    if(!r.length) return null;
+    var sp=splitAtFirstPrep(r);
+    var c=sp.head, m=sp.tail;
+    if(!c.length) return null;
+    if(!isAdjLike(lw(c[0])) && !(typeof looksNounStart==='function' && looksNounStart(lw(c[0])))) return null;
+    return {O:o, C:c, M:m};
+  }
+
   window.inferPatternFromSentence = function(raw){
     var p=foldModalInf(repairShiftBe(baseParse(raw)));
-    var toks=p.toks;
-    var vIndex=p.vi;
-    var verb=lw(p.V.split(/\s+/)[0]);
-    var t1=lw(toks[vIndex+1]||'');
-    var t2=lw(toks[vIndex+2]||'');
+    var after1=lw(p.rest[0]||'');
+    var after2=lw(p.rest[1]||'');
+    var mainV=mainVerbFromVPhrase(p.V);
 
-    if((RULES.BE[verb] || RULES.LINKLIKE[verb]) && isAdjLike(t1)) return {guess:'2',verb:verb,why:'link/be + adj => SVC'};
+    // 副詞が直後ならSV
+    if(isAdvLike(after1)) return {guess:'1',verb:mainV,why:'adv after V-phrase => SV'};
 
-    if(RULES.SVOC[verb]){
-      if(typeof looksNounStart==='function'){
-        if(looksNounStart(t1) && (isAdjLike(t2) || looksNounStart(t2))) return {guess:'5',verb:verb,why:'SVOC'};
-      }
+    // SVC
+    if((RULES.BE[mainV] || RULES.LINKLIKE[mainV]) && isAdjLike(after1)) return {guess:'2',verb:mainV,why:'link/be + adj => SVC'};
+
+    // SVOC
+    if(RULES.SVOC[mainV]){
+      var svoc=detectSVOC(p.rest);
+      if(svoc) return {guess:'5',verb:mainV,why:'SVOC'};
     }
 
-    if(RULES.DITRANS[verb]){
-      if(RULES.PRON_OBJ[t1]) return {guess:'4',verb:verb,why:'SVOO'};
-      var pp=findToForAfter(toks, vIndex+1);
-      if(pp) return {guess:'3',verb:verb,why:'SVO + to/for'};
-      if(typeof looksNounStart==='function' && looksNounStart(t1) && looksNounStart(t2) && !(typeof isPrepTok==='function' && isPrepTok(t2))) return {guess:'4',verb:verb,why:'SVOO guess'};
+    // Ditrans
+    if(RULES.DITRANS[mainV]){
+      if(RULES.PRON_OBJ[after1]) return {guess:'4',verb:mainV,why:'SVOO'};
+      var pp=findToForAfterRest(p.rest);
+      if(pp) return {guess:'3',verb:mainV,why:'SVO + to/for'};
+      if(typeof looksNounStart==='function' && looksNounStart(after1) && looksNounStart(after2) && !(typeof isPrepTok==='function' && isPrepTok(after2))) return {guess:'4',verb:mainV,why:'SVOO guess'};
     }
 
-    if(typeof isPrepTok==='function' && isPrepTok(t1)) return {guess:'1',verb:verb,why:'SV'};
-    if(typeof looksNounStart==='function' && looksNounStart(t1)) return {guess:'3',verb:verb,why:'SVO'};
-    if(RULES.DET[t1] || RULES.PRON_OBJ[t1] || /^[a-z]+$/.test(t1)) return {guess:'3',verb:verb,why:'noun-like => SVO'};
-    return {guess:'1',verb:verb,why:'default SV'};
+    if(typeof isPrepTok==='function' && isPrepTok(after1)) return {guess:'1',verb:mainV,why:'SV'};
+    if(typeof looksNounStart==='function' && looksNounStart(after1) && !isAdvLike(after1)) return {guess:'3',verb:mainV,why:'SVO'};
+    if(!isAdvLike(after1) && (RULES.DET[after1] || RULES.PRON_OBJ[after1] || /^[a-z]+$/.test(after1))) return {guess:'3',verb:mainV,why:'noun-like => SVO'};
+    return {guess:'1',verb:mainV,why:'default SV'};
   };
 
   function buildHint1FromHINT2(sentence){
     var p=foldModalInf(repairShiftBe(baseParse(sentence)));
     var inf=window.inferPatternFromSentence(sentence);
     var pat=String((inf&&inf.guess)||'1');
+    var after1=lw(p.rest[0]||'');
 
-    if(pat==='1'){
-      return ['S='+p.S,'V='+p.V,'O(物)=—','C=—','M='+(join(p.rest)||'—')].join('\n');
+    if(pat==='3' && isAdvLike(after1)) pat='1';
+
+    if(pat==='5'){
+      var svoc=detectSVOC(p.rest);
+      if(svoc) return ['S='+p.S,'V='+p.V,'O(物)='+(join(svoc.O)||'—'),'C='+(join(svoc.C)||'—'),'M='+(join(svoc.M)||'—')].join('\n');
     }
+
+    if(pat==='1') return ['S='+p.S,'V='+p.V,'O(物)=—','C=—','M='+(join(p.rest)||'—')].join('\n');
     if(pat==='2'){
       var sp=splitAtFirstPrep(p.rest);
       var C=join(sp.head)||'—';
@@ -2199,19 +2242,13 @@ try{
     }
     if(pat==='4'){
       var rest=p.rest.slice();
-      var o1='—', o2='—';
       if(rest.length && RULES.PRON_OBJ[lw(rest[0])]){
-        o1=rest[0];
+        var o1=rest[0];
         rest=rest.slice(1);
-        var sp=splitAtFirstPrep(rest);
-        o2=join(sp.head)||'—';
-        var M4=join(sp.tail)||'—';
-        return ['S='+p.S,'V='+p.V,'O1(人)='+o1,'O2(物)='+o2,'C=—','M='+M4].join('\n');
+        var sp4=splitAtFirstPrep(rest);
+        return ['S='+p.S,'V='+p.V,'O1(人)='+o1,'O2(物)='+(join(sp4.head)||'—'),'C=—','M='+(join(sp4.tail)||'—')].join('\n');
       }
       return ['S='+p.S,'V='+p.V,'O1(人)=—','O2(物)=—','C=—','M='+(join(p.rest)||'—')].join('\n');
-    }
-    if(pat==='5'){
-      return ['S='+p.S,'V='+p.V,'O(物)=—','C=—','M='+(join(p.rest)||'—')].join('\n');
     }
     return ['S='+p.S,'V='+p.V,'O(物)=—','C=—','M='+(join(p.rest)||'—')].join('\n');
   }
@@ -2234,11 +2271,16 @@ try{
       if(pat==='3' && /\b(to|for)\b/i.test(s)) has3=true;
       if(!svooExample && pat==='4') svooExample=s;
       if(!svoToForExample && pat==='3' && /\b(to|for)\b/i.test(s)) svoToForExample=s;
+      // NOTE: if pat is 3 but sentence ends with adverb (early), force label 1
+      if(pat==='3'){
+        var p=foldModalInf(repairShiftBe(baseParse(s)));
+        if(isAdvLike(lw(p.rest[0]||''))) pat='1';
+      }
       parts.push(s+' ：'+(typeof patternLabel==='function'? patternLabel(pat):pat));
     }
 
     var header='HINT 3（正解例まとめ）: '+parts.join(' / ');
-
+    // choose overall pattern: if any example labeled 4 or 3(to/for), show alternation; else use it.pattern
     var patLine='正解の文型：'+(has4&&has3 ? 'SVOO（第4文型）⇄SVO（第3文型）' : (typeof patternLabel==='function'? patternLabel(String(it.pattern||'')) : String(it.pattern||'')));
 
     var convLine='';
@@ -2247,18 +2289,16 @@ try{
         convLine='変換（to/for形）: '+svoToForExample;
       } else {
         try{
-          var p=foldModalInf(repairShiftBe(baseParse(svooExample)));
-          var toks=p.toks;
-          var vi=p.vi;
+          var p2=foldModalInf(repairShiftBe(baseParse(svooExample)));
+          var toks=p2.toks;
+          var vi=p2.vi;
           var rest=toks.slice(vi+1);
           var o1=rest[0];
           if(!RULES.PRON_OBJ[lw(o1)]) throw new Error('no O1 pron');
           var after=rest.slice(1);
           var sp=splitAtFirstPrep(after);
           var o2=join(sp.head);
-          var S=p.S;
-          var V=p.V;
-          var gen=(S+' '+V+' '+o2+' to '+o1).replace(/\s+/g,' ').trim();
+          var gen=(p2.S+' '+p2.V+' '+o2+' to '+o1).replace(/\s+/g,' ').trim();
           if(!/[\.!?]$/.test(gen)) gen += '.';
           convLine='変換（自動to形）: '+gen;
         } catch(e){ convLine=''; }
