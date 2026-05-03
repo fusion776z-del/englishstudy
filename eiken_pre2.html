@@ -1600,4 +1600,409 @@ try{
 
 /* ======================= END PATCH v2.3 ======================= */
 </script>
+
+
+<script>
+/* === HINT FIX v5 (PRE-2): safe override without touching PAYLOAD_B64 ===
+   Fixes: ReferenceError 'elected is not defined' by using proper object literal keys.
+*/
+(function(){
+  if(typeof window._preps !== 'function'){
+    window._preps = function(){
+      return {at:1,in:1,on:1,to:1,for:1,from:1,with:1,by:1,about:1,of:1,into:1,onto:1,over:1,under:1,after:1,before:1,between:1,among:1,during:1,without:1,against:1,around:1,because:1};
+    };
+  }
+
+  var DET={a:1,an:1,the:1,this:1,that:1,these:1,those:1,my:1,your:1,his:1,her:1,our:1,their:1,some:1,any:1,no:1,each:1,every:1};
+  var AUX={am:1,is:1,are:1,was:1,were:1,be:1,been:1,being:1,do:1,does:1,did:1,have:1,has:1,had:1,can:1,will:1,shall:1,may:1,might:1,must:1,should:1,could:1,would:1};
+
+  function lw(x){ return (typeof lower==='function') ? lower(x) : String(x||'').toLowerCase(); }
+  function trimPunc(tokens){
+    while(tokens.length && typeof isWord==='function' && !isWord(tokens[tokens.length-1])) tokens.pop();
+    return tokens;
+  }
+  function LN(w){ return (typeof looksNounStart==='function') ? looksNounStart(w) : (/^(a|an|the|my|your|his|her|our|their)$/.test(String(w||'').toLowerCase()) || /^[a-z]+$/.test(String(w||'').toLowerCase())); }
+  function LA(w){ return (typeof looksAdj==='function') ? looksAdj(w) : false; }
+
+  function isFiniteVerbLike(tok){
+    var w=lw(tok);
+    if(!w) return false;
+    if(AUX[w]) return true;
+    if(/^[a-z]+(s|es|ied)$/.test(w)) return true;
+    if(/^[a-z]+ed$/.test(w)) return true;
+    var irr={went:1,came:1,saw:1,made:1,gave:1,took:1,found:1,kept:1,told:1,sent:1,taught:1,became:1,began:1,left:1,felt:1,got:1,knew:1,thought:1,said:1,held:1,brought:1,wrote:1,read:1,spoke:1,drove:1,ran:1,built:1,chose:1,ate:1,drank:1,slept:1,met:1};
+    return !!irr[w];
+  }
+
+  function pickVerbIndexRobust(tokens){
+    for(var i=1;i<tokens.length;i++){
+      var w=lw(tokens[i]);
+      if(/ing$/.test(w) && DET[lw(tokens[i-1])] && i+1<tokens.length && isFiniteVerbLike(tokens[i+1])) continue;
+      if(isFiniteVerbLike(tokens[i])) return i;
+    }
+    if(typeof pickVerb==='function'){
+      var v = pickVerb(tokens.slice(1)) || pickVerb(tokens) || '';
+      if(v){ var lv=lw(v); for(var j=0;j<tokens.length;j++) if(lw(tokens[j])===lv) return j; }
+    }
+    return Math.min(1, Math.max(0, tokens.length-1));
+  }
+
+  function splitAtFirstPrep(tokens){
+    var preps = (typeof window._preps==='function') ? window._preps() : {};
+    for(var i=0;i<tokens.length;i++){
+      var w=lw(tokens[i]);
+      if(preps[w]) return {head: tokens.slice(0,i), tail: tokens.slice(i)};
+    }
+    return {head: tokens.slice(0), tail: []};
+  }
+
+  function baseParse(raw){
+    var toks = (typeof tokenize==='function') ? trimPunc(tokenize(raw||'')) : String(raw||'').split(/\s+/);
+    var vi = pickVerbIndexRobust(toks);
+    return {S:toks.slice(0,vi).join(' ').trim()||'—', V:String(toks[vi]||'—'), rest:toks.slice(vi+1)};
+  }
+
+  // Override inferPatternFromSentence
+  window.inferPatternFromSentence = function(raw){
+    var tokens = (typeof tokenize==='function') ? trimPunc(tokenize(raw||'')) : String(raw||'').split(/\s+/);
+    if(tokens.length<2) return {guess:'1',verb:'',why:'short'};
+    var vIndex = pickVerbIndexRobust(tokens);
+    var verb = lw(tokens[vIndex]||'');
+    var t1 = lw(tokens[vIndex+1]||'');
+    var t2 = lw(tokens[vIndex+2]||'');
+
+    var link={am:1,is:1,are:1,was:1,were:1,be:1,become:1,became:1,seem:1,seems:1,look:1,looks:1,feel:1,feels:1,remain:1,remains:1,stay:1,stays:1,sound:1,sounds:1,taste:1,tastes:1,smell:1,smells:1,appear:1,appears:1,get:1,got:1,turn:1,turned:1,grow:1,grew:1};
+    var ditrans={give:1,gave:1,send:1,sent:1,show:1,showed:1,teach:1,taught:1,tell:1,told:1,lend:1,lent:1,buy:1,bought:1,make:1,made:1,cook:1,cooked:1,get:1,got:1,find:1,found:1,offer:1,offered:1,bring:1,brought:1,write:1,wrote:1};
+    // FIXED: elected:1 (was a bare identifier)
+    var svoc={make:1,made:1,call:1,called:1,name:1,named:1,keep:1,kept:1,find:1,found:1,consider:1,considered:1,elect:1,elected:1,leave:1,left:1};
+
+    if(link[verb]){
+      if(LA(t1) || LN(t1)) return {guess:'2',verb:verb,why:'link'};
+    }
+    if(svoc[verb]){
+      if(LN(t1) && (LA(t2) || LN(t2))) return {guess:'5',verb:verb,why:'svoc'};
+    }
+    if(ditrans[verb]){
+      var isPerson=(t1==='me'||t1==='him'||t1==='her'||t1==='us'||t1==='them'||t1==='you');
+      if(isPerson) return {guess:'4',verb:verb,why:'svoo'};
+      if(typeof findToForAfter==='function'){
+        var pp=findToForAfter(tokens, vIndex+1);
+        if(pp) return {guess:'3',verb:verb,why:'svo_to_for'};
+      }
+      if(LN(t1) && LN(t2) && !(typeof isPrepTok==='function' && isPrepTok(t2))) return {guess:'4',verb:verb,why:'svoo_guess'};
+    }
+
+    if(typeof isPrepTok==='function' && isPrepTok(t1)) return {guess:'1',verb:verb,why:'sv'};
+    if(LN(t1)) return {guess:'3',verb:verb,why:'svo'};
+    return {guess:'1',verb:verb,why:'sv_default'};
+  };
+
+  // Override hint builders used by buildHintWithM
+  window.buildHintSVM = function(raw){
+    var p=baseParse(raw);
+    var M=p.rest.join(' ').trim()||'—';
+    return ['S='+p.S,'V='+p.V,'O=—','C=—','M='+M].join('\n');
+  };
+  window.buildHintSVOC = function(raw, pat){
+    var p=baseParse(raw);
+    var rest=p.rest;
+    if(String(pat||'')==='2'){
+      var sp=splitAtFirstPrep(rest);
+      return ['S='+p.S,'V='+p.V,'O=—','C='+(sp.head.join(' ').trim()||'—'),'M='+(sp.tail.join(' ').trim()||'—')].join('\n');
+    }
+    if(String(pat||'')==='3'){
+      var sp3=splitAtFirstPrep(rest);
+      return ['S='+p.S,'V='+p.V,'O='+(sp3.head.join(' ').trim()||'—'),'C=—','M='+(sp3.tail.join(' ').trim()||'—')].join('\n');
+    }
+    if(String(pat||'')==='4'){
+      if(typeof parseDative==='function'){
+        var dt=parseDative((typeof tokenize==='function')?tokenize(raw||''):String(raw||'').split(/\s+/));
+        if(dt && dt.kind==='SVOO') return ['S='+dt.S,'V='+dt.V,'O1(人)='+dt.O1,'O2(物)='+dt.O2,'C=—','M=—'].join('\n');
+        if(dt && dt.kind==='SVO_PREP') return ['S='+dt.S,'V='+dt.V,'O='+(dt.O||'—'),'C=—','M=('+(dt.prep+' '+dt.IO)+')'].join('\n');
+      }
+      var sp4=splitAtFirstPrep(rest);
+      return ['S='+p.S,'V='+p.V,'O='+(sp4.head.join(' ').trim()||'—'),'C=—','M='+(sp4.tail.join(' ').trim()||'—')].join('\n');
+    }
+    if(String(pat||'')==='5'){
+      if(!rest.length) return ['S='+p.S,'V='+p.V,'O=—','C=—','M=—'].join('\n');
+      var oEnd=1; if(rest.length>=2 && DET[lw(rest[0])]) oEnd=2;
+      var O5=rest.slice(0,oEnd).join(' ').trim()||'—';
+      var rem=rest.slice(oEnd);
+      var sp5=splitAtFirstPrep(rem);
+      return ['S='+p.S,'V='+p.V,'O='+O5,'C='+(sp5.head.join(' ').trim()||'—'),'M='+(sp5.tail.join(' ').trim()||'—')].join('\n');
+    }
+    return ['S='+p.S,'V='+p.V,'O=—','C=—','M='+(rest.join(' ').trim()||'—')].join('\n');
+  };
+
+  // Replace HINT button handler
+  function newShowHint(){
+    var it=window.pool && window.pool[window.idx];
+    if(!it) return;
+    window.hintLevel=Math.min(3,(window.hintLevel||0)+1);
+    var tgt=(it.targets&&it.targets.length)? it.targets[0] : '';
+    var inf2=(tgt&&tgt.replace(/\s/g,'').length)? window.inferPatternFromSentence(tgt) : null;
+    var basePat=(inf2 && inf2.guess) ? String(inf2.guess) : String(it.pattern||'');
+
+    if(window.hintLevel===1){
+      var msg='HINT 1（S/V/O/C/M）:\n'+window.buildHintWithM(tgt, basePat, inf2?inf2.verb:'', it);
+      window.els.statusMsg.textContent=msg;
+      window.els.explain.classList.remove('show');
+    } else if(window.hintLevel===2){
+      window.els.statusMsg.textContent='HINT 2（正解）: '+tgt;
+      window.els.explain.classList.remove('show');
+    } else {
+      var allArr=(it.targets&&it.targets.length)? it.targets : [];
+      var hasToFor=false;
+      for(var kk=0;kk<allArr.length;kk++){ if(/\b(to|for)\b/i.test(String(allArr[kk]||''))){ hasToFor=true; break; } }
+      if(it && it.allowAltInA && hasToFor && allArr.length>=2 && typeof window._svfix_labelForAlt==='function'){
+        var parts=[];
+        for(var k=0;k<allArr.length;k++){
+          var s=allArr[k];
+          var pat=(typeof window._svfix_labelForAlt==='function')? window._svfix_labelForAlt(s, basePat) : basePat;
+          parts.push(s+' ：'+window.patternLabel(pat));
+        }
+        window.els.statusMsg.textContent='HINT 3（正解例まとめ）: '+parts.join(' / ');
+      } else {
+        var all=(allArr.length)? allArr.join(' / ') : '';
+        var msg3='HINT 3（正解例まとめ）: '+all;
+        msg3+='\n正解の文型：'+window.patternLabel(basePat);
+        window.els.statusMsg.textContent=msg3;
+      }
+      window.els.explain.classList.remove('show');
+    }
+  }
+
+  function replaceHintButton(){
+    var btn=document.getElementById('btnHint');
+    if(!btn || !btn.parentNode) return;
+    var clone=btn.cloneNode(true);
+    btn.parentNode.replaceChild(clone, btn);
+    clone.addEventListener('click', newShowHint);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', replaceHintButton);
+  else replaceHintButton();
+})();
+</script>
+
+
+
+<script>
+/* === HINT FIX v6 (PRE-2): rule-based S/V/O/C/M from HINT2, with auto-repair rules ===
+   New rule added: BE + ADJ (+ PP like 'from 9 to 5') must be SVC: S=NP, V=be, C=adj, M=PP.
+   Also includes sanity-repair: if V is not finite but next token is be-verb, shift V to be.
+*/
+(function(){
+  // --- helpers ---
+  function lw(x){ return (typeof lower==='function') ? lower(x) : String(x||'').toLowerCase(); }
+  function tok(raw){
+    if(typeof tokenize==='function') return tokenize(raw||'');
+    return String(raw||'').trim().split(/\s+/);
+  }
+  function trimPunc(tokens){
+    if(typeof isWord!=='function') return tokens;
+    while(tokens.length && !isWord(tokens[tokens.length-1])) tokens.pop();
+    return tokens;
+  }
+  function join(a){ return (a && a.length) ? a.join(' ').trim() : ''; }
+
+  // preps for splitting M
+  if(typeof window._preps !== 'function'){
+    window._preps = function(){
+      return {at:1,in:1,on:1,to:1,for:1,from:1,with:1,by:1,about:1,of:1,into:1,onto:1,over:1,under:1,after:1,before:1,between:1,among:1,during:1,without:1,against:1,around:1,because:1};
+    };
+  }
+  var PREPS = window._preps();
+  var BE = {am:1,is:1,are:1,was:1,were:1,be:1,been:1,being:1};
+  var DET = {a:1,an:1,the:1,this:1,that:1,these:1,those:1,my:1,your:1,his:1,her:1,our:1,their:1,some:1,any:1,no:1,each:1,every:1};
+  var AUX = Object.assign({}, BE, {do:1,does:1,did:1,have:1,has:1,had:1,can:1,will:1,shall:1,may:1,might:1,must:1,should:1,could:1,would:1});
+
+  function isFiniteVerbLike(w){
+    w=lw(w);
+    if(!w) return false;
+    if(AUX[w]) return true;
+    if(/^[a-z]+(s|es|ied)$/.test(w)) return true;
+    if(/^[a-z]+ed$/.test(w)) return true;
+    var irr={went:1,came:1,saw:1,made:1,gave:1,took:1,found:1,kept:1,told:1,sent:1,taught:1,became:1,began:1,left:1,felt:1,got:1,knew:1,thought:1,said:1,held:1,brought:1,wrote:1,read:1,spoke:1,drove:1,ran:1,built:1,chose:1,ate:1,drank:1,slept:1,met:1};
+    return !!irr[w];
+  }
+
+  function isAdjLike(w){
+    w=lw(w);
+    if(!w) return false;
+    // if native looksAdj exists, trust it
+    if(typeof looksAdj==='function') return !!looksAdj(w);
+    // common adj suffixes + basic list
+    if({open:1,closed:1,late:1,early:1,good:1,bad:1,busy:1,sad:1,happy:1,angry:1,ready:1,sure:1,free:1,available:1,important:1,interesting:1,boring:1,tired:1,afraid:1,clean:1}.hasOwnProperty(w)) return true;
+    if(/(y|ful|ous|able|ible|al|ive|less|ic|ish)$/.test(w)) return true;
+    if(/ed$/.test(w)) return true;
+    return false;
+  }
+
+  function pickVerbIndexRobust(tokens){
+    // prefer finite verb; avoid DET + -ing trap when next is finite
+    for(var i=1;i<tokens.length;i++){
+      var w=lw(tokens[i]);
+      if(/ing$/.test(w) && DET[lw(tokens[i-1])] && i+1<tokens.length && isFiniteVerbLike(tokens[i+1])) continue;
+      if(isFiniteVerbLike(tokens[i])) return i;
+    }
+    // fallback to existing pickVerb if any
+    if(typeof pickVerb==='function'){
+      var v = pickVerb(tokens.slice(1)) || pickVerb(tokens) || '';
+      if(v){
+        var lv=lw(v);
+        for(var j=0;j<tokens.length;j++) if(lw(tokens[j])===lv) return j;
+      }
+    }
+    return Math.min(1, Math.max(0, tokens.length-1));
+  }
+
+  function splitAtFirstPrep(tokens){
+    for(var i=0;i<tokens.length;i++){
+      if(PREPS[lw(tokens[i])]) return {head: tokens.slice(0,i), tail: tokens.slice(i)};
+    }
+    return {head: tokens.slice(0), tail: []};
+  }
+
+  function baseParse(raw){
+    var tokens = trimPunc(tok(raw));
+    var vi = pickVerbIndexRobust(tokens);
+    return {tokens:tokens, vi:vi, S:join(tokens.slice(0,vi))||'—', V:String(tokens[vi]||'—'), rest:tokens.slice(vi+1)};
+  }
+
+  function repairSVOCM(p){
+    // Repair rule A: if V is not finite but next token is BE, shift V to BE and move earlier token into S.
+    var Vlow=lw(p.V);
+    if(!isFiniteVerbLike(Vlow) && p.rest.length && BE[lw(p.rest[0])]){
+      // move current V into S tail
+      var newS = (p.S && p.S!=='—') ? (p.S+' '+p.V).trim() : p.V;
+      p.S = newS;
+      p.V = p.rest[0];
+      p.rest = p.rest.slice(1);
+    }
+    return p;
+  }
+
+  // Infer pattern from sentence (HINT2)
+  window.inferPatternFromSentence = function(raw){
+    var p = repairSVOCM(baseParse(raw));
+    var v = lw(p.V);
+    var t1 = lw(p.rest[0]||'');
+    var t2 = lw(p.rest[1]||'');
+
+    // New rule: BE + adj-like => SVC
+    if(BE[v] && isAdjLike(t1)) return {guess:'2',verb:v,why:'be + adj => SVC'};
+
+    // Existing logic fallback
+    if(typeof isPrepTok==='function' && isPrepTok(t1)) return {guess:'1',verb:v,why:'V直後が前置詞 => SV'};
+    if(typeof looksNounStart==='function'){
+      if(looksNounStart(t1)) return {guess:'3',verb:v,why:'V直後が名詞 => SVO'};
+    } else {
+      // crude noun-start: determiner/pronoun/word
+      if(DET[t1] || /^[a-z]+$/.test(t1) || /^(me|him|her|us|them|you|it)$/.test(t1)) return {guess:'3',verb:v,why:'V直後が名詞っぽい => SVO'};
+    }
+    return {guess:'1',verb:v,why:'default SV'};
+  };
+
+  // Build HINT1 lines directly (do not rely on old buildHintWithM heuristics)
+  function buildHint1(raw, pat){
+    var p = repairSVOCM(baseParse(raw));
+    var v = lw(p.V);
+
+    // Force SVC for BE+adj-like even if pat is wrong
+    if(BE[v] && isAdjLike(lw(p.rest[0]||''))) pat = '2';
+
+    if(String(pat)==='1'){
+      var M = join(p.rest) || '—';
+      return ['S='+p.S,'V='+p.V,'O(物)=—','C=—','M='+M].join('\n');
+    }
+
+    if(String(pat)==='2'){
+      // C until first prep, M from first prep
+      var sp = splitAtFirstPrep(p.rest);
+      var C = join(sp.head) || '—';
+      var M = join(sp.tail) || '—';
+      // New rule refinement: if C starts with a prep, move it to M
+      if(C!=='—' && PREPS[lw(C.split(/\s+/)[0])]){
+        M = (C + (M==='—'?'':(' '+M))).trim();
+        C = '—';
+      }
+      return ['S='+p.S,'V='+p.V,'O(物)=—','C='+C,'M='+M].join('\n');
+    }
+
+    if(String(pat)==='3'){
+      var sp3 = splitAtFirstPrep(p.rest);
+      var O = join(sp3.head) || '—';
+      var M3 = join(sp3.tail) || '—';
+      return ['S='+p.S,'V='+p.V,'O(物)='+O,'C=—','M='+M3].join('\n');
+    }
+
+    if(String(pat)==='4'){
+      if(typeof parseDative==='function'){
+        try{
+          var dt=parseDative(tok(raw));
+          if(dt && dt.kind==='SVOO') return ['S='+dt.S,'V='+dt.V,'O1(人)='+dt.O1,'O2(物)='+dt.O2,'C=—','M=—'].join('\n');
+          if(dt && dt.kind==='SVO_PREP') return ['S='+dt.S,'V='+dt.V,'O(物)='+(dt.O||'—'),'C=—','M=('+(dt.prep+' '+dt.IO)+')'].join('\n');
+        } catch(e){}
+      }
+      // fallback: treat like SVO
+      var sp4 = splitAtFirstPrep(p.rest);
+      return ['S='+p.S,'V='+p.V,'O(物)='+(join(sp4.head)||'—'),'C=—','M='+(join(sp4.tail)||'—')].join('\n');
+    }
+
+    if(String(pat)==='5'){
+      // Simple: O first (det+word allowed), then C until prep
+      var rest=p.rest.slice();
+      if(!rest.length) return ['S='+p.S,'V='+p.V,'O(物)=—','C=—','M=—'].join('\n');
+      var oEnd=1;
+      if(rest.length>=2 && DET[lw(rest[0])]) oEnd=2;
+      var O5=join(rest.slice(0,oEnd))||'—';
+      var rem=rest.slice(oEnd);
+      var sp5=splitAtFirstPrep(rem);
+      var C5=join(sp5.head)||'—';
+      var M5=join(sp5.tail)||'—';
+      return ['S='+p.S,'V='+p.V,'O(物)='+O5,'C='+C5,'M='+M5].join('\n');
+    }
+
+    // default
+    var Mx = join(p.rest) || '—';
+    return ['S='+p.S,'V='+p.V,'O(物)=—','C=—','M='+Mx].join('\n');
+  }
+
+  // Replace HINT button to use our builder + basePat
+  function newShowHint(){
+    var it=window.pool && window.pool[window.idx];
+    if(!it) return;
+    window.hintLevel=Math.min(3,(window.hintLevel||0)+1);
+    var tgt=(it.targets&&it.targets.length)? it.targets[0] : '';
+    var inf=(tgt&&tgt.replace(/\s/g,'').length)? window.inferPatternFromSentence(tgt) : null;
+    var basePat=(inf && inf.guess) ? String(inf.guess) : String(it.pattern||'');
+
+    if(window.hintLevel===1){
+      window.els.statusMsg.textContent = 'HINT 1（S/V/O/C/M）:\n' + buildHint1(tgt, basePat);
+      window.els.explain.classList.remove('show');
+    } else if(window.hintLevel===2){
+      window.els.statusMsg.textContent = 'HINT 2（正解）: ' + tgt;
+      window.els.explain.classList.remove('show');
+    } else {
+      var allArr=(it.targets&&it.targets.length)? it.targets : [];
+      var all=(allArr.length)? allArr.join(' / ') : '';
+      var msg3='HINT 3（正解例まとめ）: '+all+'\n正解の文型：'+(typeof patternLabel==='function'? patternLabel(basePat):basePat);
+      window.els.statusMsg.textContent=msg3;
+      window.els.explain.classList.remove('show');
+    }
+  }
+
+  function replaceHintButton(){
+    var btn=document.getElementById('btnHint');
+    if(!btn || !btn.parentNode) return;
+    var clone=btn.cloneNode(true);
+    btn.parentNode.replaceChild(clone, btn);
+    clone.addEventListener('click', newShowHint);
+  }
+
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', replaceHintButton);
+  else replaceHintButton();
+})();
+</script>
+
 </body></html>
