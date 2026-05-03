@@ -228,14 +228,9 @@ box-shadow:0 6px 20px rgba(0,0,0,.35);}
 </div>
 
 <script>
-
-/* === FIX: preposition checker (for HINT) === */
-function _preps(w){
-  return [
-    "at","in","on","to","for","from","with","by","about",
-    "of","into","onto","over","under","after","before",
-    "between","among","during","without","against","around"
-  ].includes(String(w).toLowerCase());
+/* === FIX: preposition map (for HINT parsing) === */
+function _preps(){
+  return {at:1,in:1,on:1,to:1,for:1,from:1,with:1,by:1,about:1,of:1,into:1,onto:1,over:1,under:1,after:1,before:1,between:1,among:1,during:1,without:1,against:1,around:1};
 }
 
 (function(){var diag=document.getElementById('diag');function show(msg){if(!diag)return;diag.style.display='block';diag.textContent=msg;}window.onerror=function(message,source,lineno,colno,error){show('JS ERROR:\n'+message+'\n'+(source||'')+':'+lineno+':'+colno);};})();
@@ -961,9 +956,13 @@ function showHint(){
   var tgt=(it.targets&&it.targets.length)? it.targets[0] : '';
   var inf2=(tgt&&tgt.replace(/\s/g,'').length)? inferPatternFromSentence(tgt) : null;
 
-  if(hintLevel===1){
+  
+
+  // === FIX: derive pattern from the correct answer (HINT2) and use it for HINT1/HINT3 ===
+  var basePat = (inf2 && inf2.guess) ? String(inf2.guess) : String(it.pattern||'');
+if(hintLevel===1){
     // HINT1: structure only (do NOT show correct pattern)
-    var msg='HINT 1（S/V/O/C/M）:\n'+buildHintWithM(tgt, String(it.pattern||''), inf2?inf2.verb:'', it);
+    var msg='HINT 1（S/V/O/C/M）:\n'+buildHintWithM(tgt, basePat, inf2?inf2.verb:'', it);
     els.statusMsg.textContent=msg;
     els.explain.classList.remove('show');
   } else if(hintLevel===2){
@@ -981,14 +980,14 @@ function showHint(){
     var parts=[];
     for(var k=0;k<allArr.length;k++){
       var s=allArr[k];
-      var pat=_svfix_labelForAlt(s, it.pattern);
+      var pat=_svfix_labelForAlt(s, basePat);
       parts.push(s+' ：'+patternLabel(pat));
     }
     els.statusMsg.textContent='HINT 3（正解例まとめ）: '+parts.join(' / ');
   } else {
     var all=(allArr.length)? allArr.join(' / ') : '';
     var msg3='HINT 3（正解例まとめ）: '+all;
-    msg3+='\n正解の文型：'+patternLabel(it.pattern);
+    msg3+='\n正解の文型：'+patternLabel(basePat);
     els.statusMsg.textContent=msg3;
   }
   els.explain.classList.remove('show');
@@ -1215,5 +1214,114 @@ try{
   document.addEventListener('pointerup', onUp, {passive:false});
   document.addEventListener('dragstart', onUp, {passive:true});
 })();
+
+
+/* === FIX v6: make pattern inference use robust verb selection (fixes Q1 'meeting' mis-read as verb) === */
+(function(){
+  var DET={a:1,an:1,the:1,this:1,that:1,these:1,those:1,my:1,your:1,his:1,her:1,our:1,their:1,some:1,any:1,no:1,each:1,every:1};
+  var AUX={am:1,is:1,are:1,was:1,were:1,be:1,been:1,being:1,do:1,does:1,did:1,have:1,has:1,had:1,can:1,will:1,shall:1,may:1,might:1,must:1,should:1,could:1,would:1};
+  function trimPunc(tokens){ while(tokens.length && !isWord(tokens[tokens.length-1])) tokens.pop(); return tokens; }
+  function isFiniteVerbLike(tok){
+    var w=lower(tok||'');
+    if(!w) return false;
+    if(AUX[w]) return true;
+    if(/^[a-z]+(s|es|ied)$/.test(w)) return true;
+    if(/^[a-z]+ed$/.test(w)) return true;
+    var irr={went:1,came:1,saw:1,made:1,gave:1,took:1,found:1,kept:1,told:1,sent:1,taught:1,became:1,began:1,left:1,felt:1,got:1,knew:1,thought:1,said:1,held:1,brought:1,wrote:1,read:1,spoke:1,drove:1,ran:1,built:1,chose:1,ate:1,drank:1,slept:1};
+    return !!irr[w];
+  }
+  function pickVerbIndexRobust(tokens){
+    for(var i=1;i<tokens.length;i++){
+      var w=lower(tokens[i]||'');
+      if(/ing$/.test(w) && DET[lower(tokens[i-1]||'')] && i+1<tokens.length && isFiniteVerbLike(tokens[i+1])) continue;
+      if(isFiniteVerbLike(tokens[i])) return i;
+    }
+    var v = pickVerb(tokens.slice(1)) || pickVerb(tokens) || '';
+    if(v){ var lv=lower(v); for(var j=0;j<tokens.length;j++) if(lower(tokens[j])===lv) return j; }
+    return Math.min(1, Math.max(0, tokens.length-1));
+  }
+
+  // Robust inferPatternFromSentence replacement
+  window.inferPatternFromSentence = function(raw){
+    var tokens = trimPunc(tokenize(raw||''));
+    if(tokens.length<2) return {guess:'1',verb:'',why:'短すぎ'};
+    var vIndex = pickVerbIndexRobust(tokens);
+    var verb = lower(tokens[vIndex]||'');
+    var t1 = lower(tokens[vIndex+1]||'');
+    var t2 = lower(tokens[vIndex+2]||'');
+
+    var link={'am':1,'is':1,'are':1,'was':1,'were':1,'be':1,'become':1,'became':1,'seem':1,'seems':1,'look':1,'looks':1,'feel':1,'feels':1,'remain':1,'remains':1,'stay':1,'stays':1,'sound':1,'sounds':1,'taste':1,'tastes':1,'smell':1,'smells':1,'appear':1,'appears':1,'get':1,'got':1,'turn':1,'turned':1,'grow':1,'grew':1};
+    var ditrans={'give':1,'gave':1,'send':1,'sent':1,'show':1,'showed':1,'teach':1,'taught':1,'tell':1,'told':1,'lend':1,'lent':1,'buy':1,'bought':1,'make':1,'made':1,'cook':1,'cooked':1,'get':1,'got':1,'find':1,'found':1,'offer':1,'offered':1,'bring':1,'brought':1,'write':1,'wrote':1};
+    var svoc={'make':1,'made':1,'call':1,'called':1,'name':1,'named':1,'keep':1,'kept':1,'find':1,'found':1,'consider':1,'considered':1,'elect':1,'elected':1,'leave':1,'left':1};
+
+    if(link[verb]){
+      if(looksAdj(t1) || looksNounStart(t1)) return {guess:'2',verb:verb,why:'状態系V + C'};
+    }
+    if(svoc[verb]){
+      if(looksNounStart(t1) && (looksAdj(t2) || looksNounStart(t2))) return {guess:'5',verb:verb,why:'Oの後ろにC'};
+    }
+    if(ditrans[verb]){
+      var isPerson=(t1==='me'||t1==='him'||t1==='her'||t1==='us'||t1==='them'||t1==='you');
+      if(isPerson) return {guess:'4',verb:verb,why:'V直後が人なのでSVOO'};
+      var pp=findToForAfter(tokens, vIndex+1);
+      if(pp) return {guess:'3',verb:verb,why:'物 + '+pp.prep+' + 人でSVO'};
+      if(looksNounStart(t1) && looksNounStart(t2) && !isPrepTok(t2)) return {guess:'4',verb:verb,why:'名詞が続くのでSVOO寄り'};
+    }
+
+    if(isPrepTok(t1)) return {guess:'1',verb:verb,why:'V直後が前置詞でSV'};
+    if(looksNounStart(t1)) return {guess:'3',verb:verb,why:'V直後が名詞でSVO'};
+    return {guess:'1',verb:verb,why:'S+Vで成立'};
+  };
+
+  // Also override buildHintSVM / buildHintSVOC to use robust verb index (same as v5)
+  function splitAtFirstPrep(tokens){
+    var preps = (typeof _preps==='function') ? _preps() : {};
+    for(var i=0;i<tokens.length;i++){
+      var w=lower(tokens[i]||'');
+      if(preps[w]) return {head: tokens.slice(0,i), tail: tokens.slice(i)};
+    }
+    return {head: tokens.slice(0), tail: []};
+  }
+  function baseParse(raw){
+    var toks = trimPunc(tokenize(raw||''));
+    var vi = pickVerbIndexRobust(toks);
+    return {S: toks.slice(0,vi).join(' ').trim()||'—', V: String(toks[vi]||'—'), rest: toks.slice(vi+1)};
+  }
+  window.buildHintSVM = function(raw){
+    var p=baseParse(raw);
+    var M=p.rest.join(' ').trim()||'—';
+    return ['S='+p.S,'V='+p.V,'O=—','C=—','M='+M].join('\n');
+  };
+  window.buildHintSVOC = function(raw, pat){
+    var p=baseParse(raw); var rest=p.rest;
+    if(String(pat||'')==='2'){
+      var sp=splitAtFirstPrep(rest);
+      return ['S='+p.S,'V='+p.V,'O=—','C='+(sp.head.join(' ').trim()||'—'),'M='+(sp.tail.join(' ').trim()||'—')].join('\n');
+    }
+    if(String(pat||'')==='3'){
+      var sp3=splitAtFirstPrep(rest);
+      return ['S='+p.S,'V='+p.V,'O='+(sp3.head.join(' ').trim()||'—'),'C=—','M='+(sp3.tail.join(' ').trim()||'—')].join('\n');
+    }
+    if(String(pat||'')==='4'){
+      if(typeof parseDative==='function'){
+        var dt=parseDative(tokenize(raw||''));
+        if(dt && dt.kind==='SVOO') return ['S='+dt.S,'V='+dt.V,'O1(人)='+dt.O1,'O2(物)='+dt.O2,'C=—','M=—'].join('\n');
+        if(dt && dt.kind==='SVO_PREP') return ['S='+dt.S,'V='+dt.V,'O='+(dt.O||'—'),'C=—','M=('+(dt.prep+' '+dt.IO)+')'].join('\n');
+      }
+      var sp4=splitAtFirstPrep(rest);
+      return ['S='+p.S,'V='+p.V,'O='+(sp4.head.join(' ').trim()||'—'),'C=—','M='+(sp4.tail.join(' ').trim()||'—')].join('\n');
+    }
+    if(String(pat||'')==='5'){
+      if(!rest.length) return ['S='+p.S,'V='+p.V,'O=—','C=—','M=—'].join('\n');
+      var oEnd=1; if(rest.length>=2 && DET[lower(rest[0]||'')]) oEnd=2;
+      var O5=rest.slice(0,oEnd).join(' ').trim()||'—';
+      var rem=rest.slice(oEnd);
+      var sp5=splitAtFirstPrep(rem);
+      return ['S='+p.S,'V='+p.V,'O='+O5,'C='+(sp5.head.join(' ').trim()||'—'),'M='+(sp5.tail.join(' ').trim()||'—')].join('\n');
+    }
+    return ['S='+p.S,'V='+p.V,'O=—','C=—','M='+(rest.join(' ').trim()||'—')].join('\n');
+  };
+})();
+
 </script>
 </body></html>
