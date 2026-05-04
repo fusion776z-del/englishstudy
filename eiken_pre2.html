@@ -525,7 +525,28 @@ function splitSVOC(raw, pat, verb){
   if(pat==='1'){
     M=join(rest);
   } else if(pat==='2'){
-    C=join(rest);
+    // SVC: split Complement (C) vs Modifier (M)
+    // C = adjective/noun, M = PP / than-phrase / to-phrase
+    var preps={in:1,on:1,at:1,for:1,to:1,with:1,of:1,about:1,from:1,by:1,after:1,before:1,under:1,over:1,near:1,around:1,into:1,onto:1,between:1,among:1,during:1,than:1};
+
+    // Special-case: "used to be ..." often yields rest starting with "to be ..."
+    // In that case, treat the complement as starting after "to be".
+    var startIdx=0;
+    if(rest.length>=2 && lower(rest[0])==='to' && lower(rest[1])==='be'){
+      startIdx=2;
+    }
+
+    var pIdx=-1;
+    for(var k=startIdx+1;k<rest.length;k++){
+      if(preps[lower(rest[k])]){ pIdx=k; break; }
+    }
+
+    if(pIdx>startIdx){
+      C=join(rest.slice(startIdx,pIdx));
+      M=join(rest.slice(pIdx));
+    } else {
+      C=join(rest.slice(startIdx));
+    }
   } else if(pat==='3'){
     O=join(rest);
   } else if(pat==='4'){
@@ -2426,6 +2447,146 @@ try{
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', replaceHintButton);
   else replaceHintButton();
 })();
+</script>
+
+
+<script>
+/* =================== HINT PATCH v12 (HINT3: add alt patterns reliably) ===================
+  目的:
+    - targets に別解がある場合、その文ごとの文型ラベルを HINT3 に必ず付ける
+    - 「正解の文型」も、別解で出てくる文型を追加して列挙する
+  重要:
+    - 元HTMLは HINT ボタンの click handler を差し替える実装があるため、btnHint を再クローンして本パッチを確実に適用
+    - 画面下に [HINT PATCH v12 ACTIVE] を表示
+  判定ルール（to/for 交替を優先）:
+    - 受け手(人)が動詞直後に来る: SVOO(4)
+    - 物 + to/for + 人 の形: SVO(3)
+    - それ以外は inferPatternFromSentence を使う（あれば）
+*/
+(function(){
+  if(window.__HINT_PATCH_V12__) return;
+  window.__HINT_PATCH_V12__ = true;
+
+  function setActiveFlag(){
+    try{
+      if(window.els && window.els.statusSub){
+        var s=String(window.els.statusSub.textContent||'');
+        if(s.indexOf('[HINT PATCH v12 ACTIVE]')===-1){
+          window.els.statusSub.textContent = s + '  [HINT PATCH v12 ACTIVE]';
+        }
+      }
+    }catch(e){}
+  }
+
+  function patLabel(p){
+    return (typeof window.patternLabel==='function') ? window.patternLabel(String(p||'')) : String(p||'');
+  }
+
+  // Ditrans verbs (minimal set used in this dataset)
+  var DITRANS = /\b(give|gave|send|sent|show|showed|teach|taught|tell|told|lend|lent|buy|bought|make|made|cook|cooked|get|got|offer|offered|bring|brought|write|wrote)\b/i;
+  var OBJPRON = /\b(me|him|her|us|them|you)\b/i;
+
+  function detectPatForSentence(s, fallback){
+    s = String(s||'');
+    // Normalize apostrophes lightly
+    s = s.replace(/[’‛＇`]/g,"'");
+
+    // 1) SVOO: verb + (me/him/her/us/them/you) + noun ...
+    //    (e.g., bought you this / lent me his pen)
+    if(DITRANS.test(s)){
+      var m = s.match(DITRANS);
+      if(m){
+        var v = m[0];
+        // look for "v + pron" pattern
+        var reSVOO = new RegExp('\\b'+v+'\\b\\s+' + OBJPRON.source, 'i');
+        if(reSVOO.test(s)) return '4';
+      }
+      // 2) SVO (dative prep): "... to/for + pron/name"
+      //    (e.g., lent his pen to me / bought this for you)
+      if(/\b(to|for)\b/i.test(s)) return '3';
+    }
+
+    // 3) fallback to inferPatternFromSentence if available
+    if(typeof window.inferPatternFromSentence==='function'){
+      var inf = window.inferPatternFromSentence(s);
+      if(inf && inf.guess) return String(inf.guess);
+    }
+    return String(fallback||'');
+  }
+
+  function buildHint3_WithAltPatterns(it){
+    var arr = (it && it.targets && it.targets.length) ? it.targets : [];
+    if(!arr.length) return 'HINT 3（正解例まとめ）: \n正解の文型：';
+
+    var base = String(it.pattern||'');
+    var parts=[];
+    var pats=[];
+    var seenP = {};
+
+    function addPat(p){
+      p = String(p||'');
+      if(!p) return;
+      if(!seenP[p]){ seenP[p]=1; pats.push(p); }
+    }
+
+    addPat(base);
+
+    for(var i=0;i<arr.length;i++){
+      var s = String(arr[i]||'').trim();
+      if(!s) continue;
+      var p = detectPatForSentence(s, base);
+      addPat(p);
+      parts.push(s + ' ：' + patLabel(p));
+    }
+
+    var header = 'HINT 3（正解例まとめ）: ' + parts.join(' / ');
+    var patLine = '正解の文型：' + pats.map(patLabel).join(' / ');
+    return header + '\n' + patLine;
+  }
+
+  function buildHint1(it){
+    var tgt = (it && it.targets && it.targets.length) ? it.targets[0] : '';
+    if(typeof window.buildHint1FromHINT2 === 'function') return window.buildHint1FromHINT2(tgt);
+    if(typeof window.buildHintWithM === 'function'){
+      var inf = (typeof window.inferPatternFromSentence==='function') ? window.inferPatternFromSentence(tgt) : null;
+      var v = inf ? (inf.verb || '') : '';
+      return window.buildHintWithM(tgt, String(it.pattern||''), v, it);
+    }
+    return 'S=—\nV=—\nO(物)=—\nC=—\nM=—';
+  }
+
+  function newShowHintV12(){
+    var it = window.pool && window.pool[window.idx];
+    if(!it) return;
+    window.hintLevel = Math.min(3, (window.hintLevel||0) + 1);
+    setActiveFlag();
+
+    var tgt = (it.targets && it.targets.length) ? it.targets[0] : '';
+    if(window.hintLevel===1){
+      window.els.statusMsg.textContent = 'HINT 1（S/V/O/C/M）:\n' + buildHint1(it);
+      window.els.explain.classList.remove('show');
+    } else if(window.hintLevel===2){
+      window.els.statusMsg.textContent = 'HINT 2（正解）: ' + tgt;
+      window.els.explain.classList.remove('show');
+    } else {
+      window.els.statusMsg.textContent = buildHint3_WithAltPatterns(it);
+      window.els.explain.classList.remove('show');
+    }
+  }
+
+  function replaceHintButtonV12(){
+    var btn = document.getElementById('btnHint');
+    if(!btn || !btn.parentNode) return;
+    var clone = btn.cloneNode(true);
+    btn.parentNode.replaceChild(clone, btn);
+    clone.addEventListener('click', newShowHintV12);
+    setActiveFlag();
+  }
+
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(replaceHintButtonV12, 0); });
+  else setTimeout(replaceHintButtonV12, 0);
+})();
+/* ================= END HINT PATCH v12 ================= */
 </script>
 
 </body></html>
