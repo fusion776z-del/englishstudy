@@ -2589,4 +2589,192 @@ try{
 /* ================= END HINT PATCH v12 ================= */
 </script>
 
+
+<script>/* HINT_PATCH_SVC_ASLEEP v2 */
+(function(){
+  if(window.__HINT_PATCH_SVC_ASLEEP__) return;
+  window.__HINT_PATCH_SVC_ASLEEP__=true;
+  var _origInfer=window.inferPatternFromSentence;
+  function lower(s){return String(s||'').toLowerCase();}
+  function simpleTokenize(raw){
+    if(typeof window.tokenize==='function') return window.tokenize(raw||'');
+    return String(raw||'').trim().split(/\s+/).filter(Boolean);
+  }
+  function isWordLike(t){
+    if(typeof window.isWord==='function') return window.isWord(t);
+    return /[A-Za-z0-9]/.test(String(t||''));
+  }
+  function isAdjLike(w){
+    w=lower(w);
+    if(!w) return false;
+    if(['asleep','awake','afraid','alive','alone','ready','tired','late','early','busy','free','open','closed','sure','happy','sad','boring','interesting','important'].indexOf(w)>=0) return true;
+    if(/(y|ful|ous|able|ible|al|ive|less|ic|ish|ed)$/.test(w)) return true;
+    return false;
+  }
+  function isLinkVerb(v){
+    v=lower(v);
+    return ['be','am','is','are','was','were','been','being','become','became','seem','seems','look','looks','feel','feels','remain','remains','stay','stays','sound','sounds','taste','tastes','smell','smells','appear','appears','get','got','turn','turned','grow','grew','fall','fell','fallen'].indexOf(v)>=0;
+  }
+  function guessPattern(raw){
+    var tokens=simpleTokenize(raw);
+    while(tokens.length && !isWordLike(tokens[tokens.length-1])) tokens.pop();
+    if(tokens.length<2) return {guess:'1',verb:'',why:'短すぎ'};
+    var AUX={am:1,is:1,are:1,was:1,were:1,be:1,been:1,being:1,do:1,does:1,did:1,have:1,has:1,had:1,can:1,will:1,shall:1,may:1,might:1,must:1,should:1,could:1,would:1};
+    var irr={went:1,came:1,saw:1,made:1,gave:1,took:1,found:1,kept:1,told:1,sent:1,felt:1,left:1,slept:1,ran:1,bought:1,caught:1,ate:1,drank:1,wrote:1,read:1,said:1,sat:1,stood:1,met:1,put:1,got:1,hid:1};
+    var vIndex=1;
+    for(var i=1;i<tokens.length;i++){
+      var w=lower(tokens[i]);
+      if(isLinkVerb(w) || AUX[w] || irr[w] || /^[a-z]+(ed|s|es)$/.test(w)){ vIndex=i; break; }
+    }
+    var verb=lower(tokens[vIndex]||'');
+    var t1=lower(tokens[vIndex+1]||'');
+    // phrasal verb doze off => SV
+    if((verb==='doze'||verb==='dozed') && t1==='off') return {guess:'1',verb:verb,why:'句動詞 doze off（自動詞）'};
+    // link/state-change + complement => SVC
+    if(isLinkVerb(verb) && isAdjLike(t1)) return {guess:'2',verb:verb,why:'リンク動詞/状態変化＋補語C'};
+    // preposition right after verb => SV
+    var isPrep = (typeof window.isPrepTok==='function') ? window.isPrepTok(t1) : (['in','on','at','during','for','from','to','with','by','about','into','over','under','before','after','since','until','around','near','of'].indexOf(t1)>=0);
+    if(isPrep) return {guess:'1',verb:verb,why:'V直後が前置詞 = SV'};
+    // noun start => SVO fallback
+    var looksNoun = (typeof window.looksNounStart==='function') ? window.looksNounStart(t1) : (!!t1 && !isAdjLike(t1));
+    if(looksNoun) return {guess:'3',verb:verb,why:'V直後が名詞 = SVO'};
+    return {guess:'1',verb:verb,why:'default SV'};
+  }
+  window.inferPatternFromSentence = function(raw){
+    var g=guessPattern(raw);
+    if(_origInfer){
+      try{
+        var o=_origInfer(raw);
+        if(g && (g.guess==='2' || (g.why&&g.why.indexOf('doze off')>=0))) return g;
+        return o;
+      }catch(e){ return g; }
+    }
+    return g;
+  };
+  var _origBuildHintWithM = window.buildHintWithM;
+  window.buildHintWithM = function(raw, patGuess, verb, it){
+    var inf=guessPattern(raw||'');
+    if(inf && inf.guess==='2'){
+      var tokens=simpleTokenize(raw||'');
+      while(tokens.length && !isWordLike(tokens[tokens.length-1])) tokens.pop();
+      var vIdx=1;
+      for(var i=1;i<tokens.length;i++){ if(lower(tokens[i])===inf.verb){ vIdx=i; break; } }
+      var S=tokens.slice(0,vIdx).join(' ')||'—';
+      var V=tokens[vIdx]||'—';
+      var C=tokens[vIdx+1]||'—';
+      var M=tokens.slice(vIdx+2).join(' ')||'—';
+      return ['S='+S,'V='+V,'O(物)=—','C='+C,'M='+M].join('\n');
+    }
+    return _origBuildHintWithM ? _origBuildHintWithM(raw, patGuess, verb, it) : ['S=—','V=—','O(物)=—','C=—','M=—'].join('\n');
+  };
+})();
+</script>
+
+<script>/* CHECK_PATCH_MULTI_PATTERN v1 */
+(function(){
+  if(window.__CHECK_PATCH_MULTI_PATTERN__) return;
+  window.__CHECK_PATCH_MULTI_PATTERN__=true;
+  var _origCheck=window.checkAnswer;
+  function safeGetEls(){
+    return window.els || {patternSel:document.getElementById('patternSel'),patternWrap:document.getElementById('patternWrap'),statusMsg:document.getElementById('statusMsg'),explain:document.getElementById('explain')};
+  }
+  window.checkAnswer = function(){
+    var els=safeGetEls();
+    try{ if(els.explain && els.explain.classList) els.explain.classList.remove('show'); }catch(e){}
+    var pool = window.pool || [];
+    var idx = (window.idx!=null) ? window.idx : 0;
+    var it = pool[idx];
+    if(!it){ if(_origCheck) return _origCheck(); return; }
+
+    var userPattern = els.patternSel ? els.patternSel.value : '';
+    var userRaw = (typeof window.currentSentence==='function') ? window.currentSentence() : '';
+    var user = (typeof window.normalizeSentence==='function') ? window.normalizeSentence(userRaw) : String(userRaw||'');
+
+    if(!user || user.replace(/\s/g,'').length===0){
+      if(typeof window.setStatus==='function') window.setStatus(false,'英文がまだです。','BANKから並べて英文を完成させてください。');
+      return;
+    }
+
+    var targets = it.targets || [];
+    var normalizedTargets = [];
+    for(var i=0;i<targets.length;i++) normalizedTargets.push(window.normalizeSentence? window.normalizeSentence(targets[i]) : String(targets[i]||''));
+
+    // ★改善: targets が複数ある場合は全て許可（従来は先頭だけのことがあった）
+    var acceptList = (targets.length>1) ? normalizedTargets : ((it && it.allowAltInA) ? normalizedTargets : [normalizedTargets[0]]);
+    var sentenceOk = (acceptList.indexOf(user)!==-1);
+
+    if(userPattern===''){
+      if(sentenceOk){
+        if(typeof window.markAllGood==='function') window.markAllGood();
+        if(typeof window.setStatus==='function') window.setStatus(false,'英文はOK。5文型を選択しよう。','5文型を選んでから CHECK。');
+      } else {
+        if(typeof window.setStatus==='function') window.setStatus(false,'英文を直そう。','まず英文を完成。その後 5文型 を選択。');
+      }
+      try{ if(els.patternWrap && els.patternWrap.classList) els.patternWrap.classList.add('bad'); }catch(e){}
+      return;
+    }
+
+    // ★改善: どの正解文に一致したかで「正しい文型」を切り替える
+    var matchedIndex = normalizedTargets.indexOf(user);
+    var correctPattern = String(it.pattern||'');
+    if(matchedIndex>=0){
+      try{
+        var infT = (typeof window.inferPatternFromSentence==='function') ? window.inferPatternFromSentence(targets[matchedIndex]) : null;
+        if(infT && infT.guess) correctPattern = String(infT.guess);
+      }catch(e){}
+    }
+
+    // 元コードの推定（ユーザー文から）も維持
+    var infP = null;
+    try{ infP = (typeof window.inferPatternFromSentence==='function') ? window.inferPatternFromSentence(userRaw) : null; }catch(e){ infP=null; }
+
+    // Strict guess for dative alternation items (allowAltInA) — 元仕様を維持
+    if(it && it.allowAltInA && typeof window.parseDative==='function' && typeof window.tokenize==='function'){
+      try{
+        var dt = window.parseDative(window.tokenize(userRaw));
+        if(dt && dt.kind==='SVOO'){ infP = infP || {}; infP.guess='4'; }
+        if(dt && dt.kind==='SVO_PREP'){ infP = infP || {}; infP.guess='3'; }
+      }catch(e){}
+    }
+
+    // 授与系のSVOO(4) ⇄ SVO+to/for(3) 救済 — 元仕様を維持
+    var altV={give:1,gave:1,send:1,sent:1,show:1,showed:1,teach:1,taught:1,tell:1,told:1,lend:1,lent:1,buy:1,bought:1,make:1,made:1,cook:1,cooked:1,get:1,got:1,find:1,found:1,offer:1,offered:1,bring:1,brought:1,write:1,wrote:1};
+    if(sentenceOk && it && it.allowAltInA && infP && altV[infP.verb]){
+      if(String(it.pattern)==='4' && String(infP.guess)==='3') correctPattern='3';
+      if(String(it.pattern)==='3' && String(infP.guess)==='4') correctPattern='4';
+    }
+
+    var patternOk = (String(userPattern)===String(correctPattern));
+
+    if(sentenceOk && patternOk){
+      if(typeof window.setStatus==='function') window.setStatus(true,'✅ 正解！','英文・5文型が一致。');
+      if(typeof window.markAllGood==='function') window.markAllGood();
+      try{ if(els.patternWrap && els.patternWrap.classList){ els.patternWrap.classList.remove('bad'); els.patternWrap.classList.add('good'); } }catch(e){}
+      if(it && it.allowAltInA && typeof window.showAltGuideIfNeeded==='function') window.showAltGuideIfNeeded(it,userRaw);
+      return;
+    }
+    if(sentenceOk && !patternOk){
+      if(typeof window.markAllGood==='function') window.markAllGood();
+      try{ if(els.patternWrap && els.patternWrap.classList){ els.patternWrap.classList.remove('good'); els.patternWrap.classList.add('bad'); } }catch(e){}
+      if(typeof window.setStatus==='function') window.setStatus(false,'英文はOK。文型が違う。','HINTで S/V/O/C を確認しよう。');
+      try{ if(els.explain && els.explain.classList) els.explain.classList.remove('show'); }catch(e){}
+      return;
+    }
+
+    // 英文が不正解の場合は元の挙動へ（比較ハイライト等）
+    if(_origCheck) return _origCheck();
+  };
+
+  // ボタンを再バインド
+  function rebindCheck(){
+    var btn=document.getElementById('btnCheck');
+    if(!btn||!btn.parentNode) return;
+    var clone=btn.cloneNode(true);
+    btn.parentNode.replaceChild(clone, btn);
+    clone.addEventListener('click', window.checkAnswer);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', rebindCheck);
+  else rebindCheck();
+})();
+</script>
 </body></html>
