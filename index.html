@@ -39,7 +39,9 @@
     .phone{
       width: min(375px, 100%);
       aspect-ratio: 375 / 667;
-      max-height: 92vh;
+      max-height: calc(100dvh - 28px); /* iOS dynamic viewport */
+  max-height: calc(100svh - 28px); /* fallback for some Safari */
+  max-height: 92vh; /* legacy fallback */
       border-radius: 34px;
       background: var(--glass);
       border: 1px solid var(--stroke);
@@ -98,7 +100,12 @@
       flex-direction:column;
       gap:10px;
       flex:1;
-    }
+    
+  min-height:0; /* allow flex child to shrink so it can scroll */
+  overflow-y:auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
 
     .menu{
       margin-top: 4px;
