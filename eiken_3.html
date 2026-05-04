@@ -582,7 +582,18 @@ function splitSVOC(raw, pat, verb){
   if(pat==='1'){
     M=join(rest);
   } else if(pat==='2'){
-    C=join(rest);
+    // SVC: try to separate PP as M (e.g., interested in music / afraid of dogs)
+    var preps={in:1,on:1,at:1,for:1,to:1,with:1,of:1,about:1,from:1,by:1,after:1,before:1,under:1,over:1,near:1,around:1,into:1,onto:1,between:1,among:1};
+    var pIdx=-1;
+    for(var k=1;k<rest.length;k++){
+      if(preps[lower(rest[k])]){ pIdx=k; break; }
+    }
+    if(pIdx>0){
+      C=join(rest.slice(0,pIdx));
+      M=join(rest.slice(pIdx));
+    } else {
+      C=join(rest);
+    }
   } else if(pat==='3'){
     O=join(rest);
   } else if(pat==='4'){
