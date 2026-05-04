@@ -1642,8 +1642,9 @@ try{
 
   function buildHint1FromHINT2(sentence){
 
-  /* INV(HINT1) FIX v5: robust aux selection (skips aux inside lead clause), uses correct pattern when available */
+  /* INV(HINT1) FIX (safe): handle leading negative/limiting inversions for HINT1 */
   try {
+    var __NL = String.fromCharCode(10);
     var __t = tokenize(sentence || '');
     function __lw(x){ return String(x||'').toLowerCase(); }
     function __detok(a){ return (a||[]).join(' ').replace(/\s+([.,!?;:])/g,'$1'); }
@@ -1654,7 +1655,7 @@ try{
     var __PRON={i:1,you:1,he:1,she:1,we:1,they:1,it:1,there:1,anyone:1,anybody:1,everyone:1};
 
     if(__t && __t.length>=4){
-      // 0) So/Such inversion (SVC)
+      // So/Such inversion -> SVC
       if(__lw(__t[0])==='so' || __lw(__t[0])==='such'){
         var __beIdx=-1;
         for(var __bi=1; __bi<__t.length; __bi++){
@@ -1667,32 +1668,29 @@ try{
           var __Vb = __t[__beIdx] || '—';
           var __S2 = (__t[__beIdx+1] || '—');
           var __rest2 = __detok(__stripCommaFront(__stripEnd(__t.slice(__beIdx+2)))).trim() || '—';
-          return ['S='+__S2,'V='+__Vb,'O(物)=—','C='+__C,'M='+__rest2].join('\n');
+          return ['S='+__S2,'V='+__Vb,'O(物)=—','C='+__C,'M='+__rest2].join(__NL);
         }
       }
 
-      // 1) lead phrase + auxiliary inversion: choose aux that is followed by a likely subject-start token.
+      // Pick inversion auxiliary: aux followed by likely subject-start.
       var __auxIdx=-1;
       for(var __i=1; __i<__t.length-1; __i++){
         var __tok=__lw(__t[__i]);
         var __next=__lw(__t[__i+1]);
-        if(__AUX[__tok] && (__PRON[__next] || __DET[__next] || (/^[A-Z]/.test(__t[__i+1]||'')))){
-          __auxIdx=__i; break;
-        }
+        if(__AUX[__tok] && (__PRON[__next] || __DET[__next] || (/^[A-Z]/.test(__t[__i+1]||'')))){ __auxIdx=__i; break; }
       }
-
       if(__auxIdx>0){
         var __lead = __detok(__t.slice(0, __auxIdx)).replace(/\s*,\s*$/,'').trim();
         var __auxTok = __t[__auxIdx];
         var __after = __stripCommaFront(__stripEnd(__t.slice(__auxIdx+1)));
         if(__after.length>=2){
-          // prefer correct pattern from current item if available
+          // Prefer correct pattern from item, fallback to infer.
           var __patGuess='';
           var __verbGuess='';
           try{
             var __it = (typeof window!=='undefined' && window.pool && typeof window.idx!=='undefined') ? window.pool[window.idx] : null;
             if(__it && __it.pattern) __patGuess = String(__it.pattern);
-          }catch(__eIt){}
+          }catch(e){}
           try{
             if(typeof window!=='undefined' && typeof window.inferPatternFromSentence==='function'){
               var __inf2 = window.inferPatternFromSentence(sentence);
@@ -1701,9 +1699,8 @@ try{
                 if(__inf2.verb) __verbGuess = __lw(__inf2.verb);
               }
             }
-          }catch(__e2){}
+          }catch(e){}
 
-          // locate main verb in __after using verbGuess
           var __verbIdx=-1;
           if(__verbGuess && !__AUX[__verbGuess]){
             for(var __j=0; __j<__after.length; __j++){
@@ -1717,7 +1714,6 @@ try{
             __mainV = __after[__verbIdx];
             __tailTokens = __after.slice(__verbIdx+1);
           } else {
-            // Heuristic: determiner + noun as subject if possible
             if(__after.length>=3 && __DET[__lw(__after[0])]){
               __S_tokens = __after.slice(0,2);
               __mainV = __after[2];
@@ -1733,21 +1729,17 @@ try{
           var __V = (String(__auxTok||'—') + ' ' + String(__mainV||'—')).trim();
           var __tail = __detok(__stripCommaFront(__stripEnd(__tailTokens))).replace(/\s*[.?!]+$/,'').trim();
 
-          // If SV (pattern 1): O is —, everything after V goes to M
           if(String(__patGuess)==='1'){
             var __Msv = __lead || '—';
             if(__tail) __Msv = (__Msv==='—') ? __tail : (__Msv + ' / ' + __tail);
-            return ['S='+__S,'V='+__V,'O(物)=—','C=—','M='+(__Msv||'—')].join('\n');
+            return ['S='+__S,'V='+__V,'O(物)=—','C=—','M='+(__Msv||'—')].join(__NL);
           }
 
-          // Otherwise treat tail as O, lead as M
-          var __O = __tail || '—';
-          var __M = __lead || '—';
-          return ['S='+__S,'V='+__V,'O(物)='+__O,'C=—','M='+__M].join('\n');
+          return ['S='+__S,'V='+__V,'O(物)='+(__tail||'—'),'C=—','M='+(__lead||'—')].join(__NL);
         }
       }
     }
-  } catch(__e) {}
+  } catch(e) {}
 
 const p=parseForHints(sentence);
     const inf=window.inferPatternFromSentence(sentence) || {guess:'1'};
@@ -1804,7 +1796,7 @@ const p=parseForHints(sentence);
       if(!key || seen.has(key)) continue;
       seen.add(key);
       const inf=window.inferPatternFromSentence(s);
-      const pat=String((inf&&inf.guess) || correct || '');
+      const pat=String(correct || (inf&&inf.guess) || '');
       rows.push({s, pat});
     }
 
@@ -1849,6 +1841,20 @@ const p=parseForHints(sentence);
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', replaceHintButton);
   else replaceHintButton();
 })();
+
+
+/* HINT1 NEWLINE WRAPPER: convert literal \\n to real newlines */
+(function(){
+  try{
+    var __orig = window.buildHint1FromHINT2;
+    if(typeof __orig !== 'function') return;
+    window.buildHint1FromHINT2 = function(sentence){
+      var r = __orig.call(this, sentence);
+      return String(r==null?'':r).replace(/\\\\n/g,'\n');
+    };
+  }catch(e){}
+})();
+
 </script>
 
 </body></html>
