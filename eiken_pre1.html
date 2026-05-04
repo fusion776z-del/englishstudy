@@ -260,6 +260,22 @@ function b64ToUtf8(b64){var bin=atob(b64);var esc='';for(var i=0;i<bin.length;i+
 var DATA=JSON.parse(b64ToUtf8(PAYLOAD_B64));
 if(window.__applyAllPatches) window.__applyAllPatches(DATA);
 
+/* PATCH Q6 (pre1_inv_06): Seldom do we see such a decisive shift in policy. => SVO (pattern 3) */
+(function(){
+  try{
+    if(typeof DATA==='undefined' || !DATA || !DATA.ITEMS) return;
+    for(var i=0;i<DATA.ITEMS.length;i++){
+      var it = DATA.ITEMS[i];
+      if(it && it.id==='pre1_inv_06'){
+        it.pattern = '3';
+        break;
+      }
+    }
+  }catch(e){}
+})();
+
+
+
 var PATTERNS=DATA.PATTERNS; var ITEMS=DATA.ITEMS;
 /* === ADD: Pre-1 shelves batch (rel/passive/emph/part) === */
 (function(){
