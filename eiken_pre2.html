@@ -3,7 +3,7 @@
 <meta charset="UTF-8" />
 <script>/*FRAMEBUSTER_V2_SAFE*/try{if(location.protocol!=='file:' && window.top!==window.self){window.top.location.href=window.self.location.href;}}catch(e){}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>Idiom Forge — Sentence Builder (Eiken Pre-2 / PRE-2) [PRE2-HINTSTYLE-G3]</title>
+<title>Idiom Forge — Sentence Builder (Eiken Pre-2 / PRE-2)</title>
 <style>
 :root{--bg1:#050611;--bg2:#0c1330;--ink:#eaf2ff;--muted:rgba(234,242,255,.72);--glass:rgba(9,12,24,.74);--warn:#ff5a7a;--gold:#ffd86b;--ok:#7cffc5;--btnIdle:.32;--btnTouch:.14;--fade:120ms;}
 *{box-sizing:border-box}html,body{height:100%}
@@ -2833,4 +2833,432 @@ try{
   else rebindCheck();
 })();
 </script>
+<script>
+/* === CLEAN Q2 FIX: p2_02 have to / must are both SVO === */
+(function(){
+  function norm(s){
+    return String(s || "")
+      .trim()
+      .replace(/\s+/g, " ")
+      .replace(/\s+([.,!?;:])/g, "$1")
+      .replace(/[.!?;:]+$/g, "")
+      .toLowerCase();
+  }
+
+  function getCurrentItem(){
+    try{
+      if(typeof pool !== "undefined" && typeof idx !== "undefined" && pool && pool[idx]){
+        return pool[idx];
+      }
+    }catch(e){}
+
+    try{
+      if(window.pool && typeof window.idx !== "undefined" && window.pool[window.idx]){
+        return window.pool[window.idx];
+      }
+    }catch(e){}
+
+    return null;
+  }
+
+  function isQ2(){
+    var it = getCurrentItem();
+    return it && it.id === "p2_02";
+  }
+
+  function getSentence(){
+    if(typeof currentSentence === "function"){
+      return currentSentence();
+    }
+    return "";
+  }
+
+  function getHintLevel(){
+    try{
+      if(typeof hintLevel !== "undefined") return hintLevel;
+    }catch(e){}
+    return window.hintLevel || 0;
+  }
+
+  function setHintLevel(v){
+    try{
+      if(typeof hintLevel !== "undefined"){
+        hintLevel = v;
+      }
+    }catch(e){}
+    window.hintLevel = v;
+  }
+
+  function patchQ2Data(){
+    try{
+      if(typeof DATA === "undefined" || !DATA.ITEMS) return;
+
+      for(var i = 0; i < DATA.ITEMS.length; i++){
+        var it = DATA.ITEMS[i];
+        if(!it || it.id !== "p2_02") continue;
+
+        it.targets = [
+          "I have to finish my homework by tomorrow.",
+          "I must finish my homework by tomorrow."
+        ];
+
+        it.pattern = "3";
+
+        it.bank = [
+          "I",
+          "have",
+          "to",
+          "finish",
+          "my",
+          "homework",
+          "by",
+          "tomorrow",
+          ".",
+          "must",
+          "at",
+          "in",
+          "on"
+        ];
+
+        /*
+          Q2は「have to」のtoであり、
+          SVOO⇄SVO(to/for) の to ではない。
+          ただし、既存ロジックが別解許可に allowAltInA を使っているため残す。
+        */
+        it.allowAltInA = true;
+        it.noDativeAlt = true;
+
+        it.aGuide = {
+          title: "must と have to",
+          preferred: "I have to finish my homework by tomorrow.",
+          alt: "I must finish my homework by tomorrow.",
+          why:
+            "have to と must はどちらも「〜しなければならない」を表せます。" +
+            "この問題ではどちらも正解です。" +
+            "文型はどちらも SVO（第3文型）です。" +
+            "S=I / V=have to finish または must finish / O=my homework / M=by tomorrow。",
+          tip:
+            "by tomorrow は「明日までに」という期限を表します。" +
+            "at / in / on ではなく by を使います。",
+          always: true
+        };
+      }
+    }catch(e){}
+  }
+
+  function q2SentenceType(){
+    var s = norm(getSentence());
+
+    if(s === "i have to finish my homework by tomorrow"){
+      return "haveTo";
+    }
+
+    if(s === "i must finish my homework by tomorrow"){
+      return "must";
+    }
+
+    return "";
+  }
+
+  function q2Hint(){
+    if(!isQ2()) return false;
+
+    var lv = Math.min(3, getHintLevel() + 1);
+    setHintLevel(lv);
+
+    if(lv === 1){
+      els.statusMsg.textContent =
+        "HINT 1（S/V/O/C/M）:\n" +
+        "S=I\n" +
+        "V=have to finish / must finish\n" +
+        "O(物)=my homework\n" +
+        "C=—\n" +
+        "M=by tomorrow";
+
+      els.explain.classList.remove("show");
+      return true;
+    }
+
+    if(lv === 2){
+      els.statusMsg.textContent =
+        "HINT 2（正解）: " +
+        "I have to finish my homework by tomorrow. / " +
+        "I must finish my homework by tomorrow.";
+
+      els.explain.classList.remove("show");
+      return true;
+    }
+
+    els.statusMsg.textContent =
+      "HINT 3（正解例まとめ）: " +
+      "I have to finish my homework by tomorrow. ：SVO（第3文型） / " +
+      "I must finish my homework by tomorrow. ：SVO（第3文型）";
+
+    els.explain.classList.remove("show");
+    return true;
+  }
+
+  function q2Check(){
+    if(!isQ2()) return false;
+
+    var sentence = norm(getSentence());
+    var type = q2SentenceType();
+    var userPattern = els.patternSel.value;
+
+    els.explain.classList.remove("show");
+
+    if(!sentence){
+      setStatus(
+        false,
+        "英文がまだです。",
+        "BANKから並べて英文を完成させてください。"
+      );
+      return true;
+    }
+
+    if(!type){
+      setStatus(
+        false,
+        "❌ 不正解。英文を直そう。",
+        "Q2は “I have to finish my homework by tomorrow.” または “I must finish my homework by tomorrow.” が正解です。"
+      );
+      return true;
+    }
+
+    if(!userPattern){
+      markAllGood();
+      els.patternWrap.classList.remove("good");
+      els.patternWrap.classList.add("bad");
+
+      setStatus(
+        false,
+        "英文はOK。5文型を選択しよう。",
+        "have to finish / must finish をVとして見るので、文型は SVO（第3文型）です。"
+      );
+      return true;
+    }
+
+    if(userPattern !== "3"){
+      markAllGood();
+      els.patternWrap.classList.remove("good");
+      els.patternWrap.classList.add("bad");
+
+      setStatus(
+        false,
+        "英文はOK。文型が違う。",
+        "正解は SVO（第3文型）です。S=I / V=have to finish または must finish / O=my homework / M=by tomorrow"
+      );
+      return true;
+    }
+
+    markAllGood();
+    els.patternWrap.classList.remove("bad");
+    els.patternWrap.classList.add("good");
+
+    if(type === "haveTo"){
+      setStatus(
+        true,
+        "✅ 正解！",
+        "have to finish をVとして見るので、文型はSVOです。"
+      );
+    }else{
+      setStatus(
+        true,
+        "✅ 正解！",
+        "must finish をVとして見るので、文型はSVOです。"
+      );
+    }
+
+    return true;
+  }
+
+  /*
+    既存の処理を保存してから、Q2だけ先に処理する。
+    Q2以外は元の showHint / checkAnswer に戻す。
+  */
+  var originalShowHint = null;
+  var originalCheckAnswer = null;
+
+  try{
+    if(typeof showHint === "function"){
+      originalShowHint = showHint;
+    }
+  }catch(e){}
+
+  try{
+    if(typeof checkAnswer === "function"){
+      originalCheckAnswer = checkAnswer;
+    }
+  }catch(e){}
+
+  window.showHint = function(){
+    if(q2Hint()) return;
+    if(originalShowHint){
+      return originalShowHint.apply(this, arguments);
+    }
+  };
+
+  window.checkAnswer = function(){
+    if(q2Check()) return;
+    if(originalCheckAnswer){
+      return originalCheckAnswer.apply(this, arguments);
+    }
+  };
+
+  function rebindButtons(){
+    var hintBtn = document.getElementById("btnHint");
+    if(hintBtn && hintBtn.parentNode){
+      var newHint = hintBtn.cloneNode(true);
+      hintBtn.parentNode.replaceChild(newHint, hintBtn);
+      newHint.addEventListener("click", window.showHint);
+    }
+
+    var checkBtn = document.getElementById("btnCheck");
+    if(checkBtn && checkBtn.parentNode){
+      var newCheck = checkBtn.cloneNode(true);
+      checkBtn.parentNode.replaceChild(newCheck, checkBtn);
+      newCheck.addEventListener("click", window.checkAnswer);
+    }
+  }
+
+  patchQ2Data();
+
+  /*
+    DATAを直したあと、問題リストを再構築。
+    ただし現在位置が変わる可能性があるので、Q2テスト時はNEXT/BACKでQ2に戻る。
+  */
+  try{
+    if(typeof rebuildPool === "function"){
+      rebuildPool();
+    }
+  }catch(e){}
+
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", rebindButtons);
+  }else{
+    rebindButtons();
+  }
+})();
+</script>
+<script>
+/* === FINAL KILL SWITCH: Q2 HINT3 must never show SV === */
+(function(){
+  function norm(s){
+    return String(s || "")
+      .trim()
+      .replace(/\s+/g, " ")
+      .replace(/\s+([.,!?;:])/g, "$1")
+      .replace(/[.!?;:]+$/g, "")
+      .toLowerCase();
+  }
+
+  function getCurrentItem(){
+    try{
+      if(typeof pool !== "undefined" && typeof idx !== "undefined" && pool && pool[idx]){
+        return pool[idx];
+      }
+    }catch(e){}
+
+    try{
+      if(window.pool && typeof window.idx !== "undefined" && window.pool[window.idx]){
+        return window.pool[window.idx];
+      }
+    }catch(e){}
+
+    return null;
+  }
+
+  function isQ2(){
+    var it = getCurrentItem();
+
+    if(it && it.id === "p2_02"){
+      return true;
+    }
+
+    // 念のため、画面表示からもQ2判定する
+    var jp = document.getElementById("jpPrompt");
+    if(jp && jp.textContent.indexOf("明日までに宿題") !== -1){
+      return true;
+    }
+
+    return false;
+  }
+
+  function getHintLevel(){
+    try{
+      if(typeof hintLevel !== "undefined"){
+        return hintLevel;
+      }
+    }catch(e){}
+
+    return window.hintLevel || 0;
+  }
+
+  function setHintLevel(v){
+    try{
+      if(typeof hintLevel !== "undefined"){
+        hintLevel = v;
+      }
+    }catch(e){}
+
+    window.hintLevel = v;
+  }
+
+  function forceQ2Hint(){
+    var statusMsg = document.getElementById("statusMsg");
+    var explain = document.getElementById("explain");
+
+    if(!statusMsg) return;
+
+    var lv = Math.min(3, getHintLevel() + 1);
+    setHintLevel(lv);
+
+    if(lv === 1){
+      statusMsg.textContent =
+        "HINT 1（S/V/O/C/M）:\n" +
+        "S=I\n" +
+        "V=have to finish / must finish\n" +
+        "O(物)=my homework\n" +
+        "C=—\n" +
+        "M=by tomorrow";
+    }else if(lv === 2){
+      statusMsg.textContent =
+        "HINT 2（正解）: " +
+        "I have to finish my homework by tomorrow. / " +
+        "I must finish my homework by tomorrow.";
+    }else{
+      statusMsg.textContent =
+        "HINT 3（正解例まとめ）: " +
+        "I have to finish my homework by tomorrow. ：SVO（第3文型） / " +
+        "I must finish my homework by tomorrow. ：SVO（第3文型）";
+    }
+
+    if(explain){
+      explain.classList.remove("show");
+    }
+  }
+
+  /*
+    重要：
+    capture=true で先にクリックを捕まえ、
+    stopImmediatePropagation() で古いHINT処理を完全に止める。
+  */
+  document.addEventListener("click", function(e){
+    var btn = e.target && e.target.closest ? e.target.closest("#btnHint") : null;
+    if(!btn) return;
+
+    if(!isQ2()) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    if(e.stopImmediatePropagation){
+      e.stopImmediatePropagation();
+    }
+
+    forceQ2Hint();
+  }, true);
+})();
+</script>
+
 </body></html>
