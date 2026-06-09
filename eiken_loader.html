@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>EIKEN Loader</title>
+  <style>
+    body{margin:0;min-height:100vh;display:grid;place-items:center;color:#eaf2ff;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(circle at 12% 14%, rgba(124,255,197,.14), transparent 32%),radial-gradient(circle at 82% 22%, rgba(189,163,255,.12), transparent 30%),linear-gradient(180deg,#050611,#0c1330 55%,#050611);}
+    .box{width:min(340px,calc(100% - 28px));padding:22px;border-radius:24px;background:rgba(9,12,24,.72);border:1px solid rgba(124,255,197,.18);box-shadow:0 22px 70px rgba(0,0,0,.55);text-align:center;line-height:1.7;font-weight:800;}
+    a{color:#7cffc5;font-weight:900}
+  </style>
+</head>
+<body>
+  <div class="box" id="loading">読み込み中…</div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const page = params.get("page");
+    const safe = /^[a-zA-Z0-9_-]+$/;
+    if (!page || !safe.test(page)) {
+      document.getElementById("loading").innerHTML = 'ページ指定が正しくありません。<br><br><a href="index.html">INDEXに戻る</a>';
+      throw new Error("Invalid page parameter");
+    }
+    const script = document.createElement("script");
+    script.src = `pages/${page}.js`;
+    script.onload = () => {
+      if (!window.__EIKEN_PAGE__ || !window.__EIKEN_PAGE__.html) {
+        document.getElementById("loading").innerHTML = 'ページデータを読み込めませんでした。<br><br><a href="index.html">INDEXに戻る</a>';
+        return;
+      }
+      document.open();
+      document.write(window.__EIKEN_PAGE__.html);
+      document.close();
+    };
+    script.onerror = () => {
+      document.getElementById("loading").innerHTML = 'JSファイルが見つかりません。<br><br><a href="index.html">INDEXに戻る</a>';
+    };
+    document.head.appendChild(script);
+  </script>
+</body>
+</html>
